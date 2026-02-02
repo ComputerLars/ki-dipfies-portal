@@ -1,0 +1,26 @@
+{
+  "updated": "2026-02-02",
+  "items": [
+    {
+      "id": "ki-dipfies-mega-drama-unified-composite-transcript",
+      "label": "KI-DIPFIES Mega-Drama – Unified Composite Transcript",
+      "path": "source/drama_versions/KI-DIPFIES Mega-Drama – Unified Composite Transcript.docx",
+      "type": "docx",
+      "note": "source document"
+    },
+    {
+      "id": "ki-dipfies-kopi-minimally-fixed",
+      "label": "KI-DIPFIES_Kopi_minimally_fixed",
+      "path": "source/drama_versions/KI-DIPFIES_Kopi_minimally_fixed.docx",
+      "type": "docx",
+      "note": "source document"
+    },
+    {
+      "id": "ki-dipfies-gipfeltreffen-stenographic-transcripts-1-long",
+      "label": "Long KI-DIPFIES Gipfeltreffen – Stenographic Transcripts (1)",
+      "path": "source/drama_versions/Long KI-DIPFIES Gipfeltreffen – Stenographic Transcripts (1).docx",
+      "type": "docx",
+      "note": "source document"
+    }
+  ]
+}

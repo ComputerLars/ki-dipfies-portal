@@ -7,6 +7,7 @@
     { bg:"white", fg:"black", btn:"green", ink:"dark" },
   ];
   const ROLES = ["Delegate","Witness","Archivist","Chair","Ghost","Bot"];
+  const ARCHIVE_PAGE = 6;
 
   const state = {
     build:"dev",
@@ -16,17 +17,35 @@
     worldId:null,
     dayNo:null,
     cursor:0,
+    chunkStack:[],
     roleIdx:0,
     drift:0,
     buffer:[],
     markov:null,
     corpus:null,
+    archive:null,
+    archiveOpen:false,
+    archivePage:0,
+    relic:null,
+    viewer:null,
   };
 
   const TOK_RE = /[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:['’][A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?|[.,!?;:()]/g;
   const safeText = (x) => (x ?? "").toString();
   const clamp01 = (x) => Math.max(0, Math.min(1, x));
   const escapeHTML = (s) => safeText(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const shorten = (s, n=40) => {
+    const t = safeText(s);
+    return t.length > n ? `${t.slice(0, n-3).trim()}...` : t;
+  };
+  const dom = {
+    viewer: $("#viewer"),
+    viewerTitle: $("#viewer-title"),
+    viewerMeta: $("#viewer-meta"),
+    viewerText: $("#viewer-text"),
+    viewerFrame: $("#viewer-frame"),
+    viewerActions: $("#viewer-actions"),
+  };
 
   function tokenize(s){ return (safeText(s).match(TOK_RE) || []); }
   function detok(tokens){
@@ -70,6 +89,88 @@
     return detok(out);
   }
 
+  function resolveUrl(path){
+    try{ return new URL(path, location.href).href; }catch{ return path; }
+  }
+
+  function setViewerActions(btns){
+    const wrap = dom.viewerActions;
+    if(!wrap) return;
+    wrap.innerHTML = "";
+    for(const b of btns){
+      const el = document.createElement("div");
+      el.className = "vbtn";
+      el.textContent = b.label;
+      el.onclick = b.onClick;
+      wrap.appendChild(el);
+    }
+  }
+  function showViewer(){
+    if(!dom.viewer) return;
+    dom.viewer.setAttribute("aria-hidden","false");
+  }
+  function hideViewer(){
+    if(!dom.viewer) return;
+    dom.viewer.setAttribute("aria-hidden","true");
+    if(dom.viewerText) dom.viewerText.textContent = "";
+    if(dom.viewerText) dom.viewerText.hidden = true;
+    if(dom.viewerFrame){ dom.viewerFrame.hidden = true; dom.viewerFrame.src = "about:blank"; }
+    if(dom.viewerActions) dom.viewerActions.innerHTML = "";
+    state.viewer = null;
+  }
+  function setViewerText(text){
+    if(dom.viewerText){ dom.viewerText.hidden = false; dom.viewerText.textContent = text; }
+    if(dom.viewerFrame) dom.viewerFrame.hidden = true;
+  }
+  function setViewerFrame(src){
+    if(dom.viewerFrame){ dom.viewerFrame.hidden = false; dom.viewerFrame.src = src; }
+    if(dom.viewerText) dom.viewerText.hidden = true;
+  }
+  async function openViewer(item){
+    if(!item) return;
+    state.viewer = item;
+    state.archiveOpen = false;
+    if(dom.viewerTitle) dom.viewerTitle.textContent = safeText(item.label || item.id || "Archive");
+    if(dom.viewerMeta) dom.viewerMeta.textContent = safeText(item.note || item.type || "");
+    showViewer();
+    setViewerText("Loading...");
+
+    const direct = resolveUrl(item.path || "");
+    const closeBtn = { label:"Close", onClick: () => { click(); hideViewer(); render(); persist(); } };
+    const openBtn = { label:"Open file", onClick: () => { click(); window.open(direct, "_blank", "noopener"); } };
+
+    if(item.type === "text" || item.type === "json"){
+      try{
+        const raw = await fetch(direct, { cache:"no-store" }).then(r => r.text());
+        let out = raw;
+        if(item.type === "json"){
+          try{ out = JSON.stringify(JSON.parse(raw), null, 2); }catch{ out = raw; }
+        }
+        setViewerText(out.trim() || "(empty file)");
+      }catch(err){
+        setViewerText(`(failed to load) ${safeText(err.message || err)}`);
+      }
+      setViewerActions([closeBtn, openBtn]);
+      return;
+    }
+
+    if(item.type === "docx"){
+      const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(direct)}`;
+      setViewerFrame(viewerUrl);
+      setViewerActions([closeBtn, openBtn]);
+      return;
+    }
+
+    if(item.type === "pdf" || item.type === "image"){
+      setViewerFrame(direct);
+      setViewerActions([closeBtn, openBtn]);
+      return;
+    }
+
+    setViewerText("Unsupported file type.");
+    setViewerActions([closeBtn, openBtn]);
+  }
+
   function classifyLine(t){
     const s = safeText(t).trim();
     if(!s) return { kind:"empty", spk:"", txt:"" };
@@ -106,15 +207,39 @@
     return days.find(d => d.day === dayNo) || days[0] || null;
   }
 
+  function markovSeed(){
+    const world = getWorldById(state.worldId);
+    const day = getDay(world, state.dayNo);
+    const blocks = day?.blocks || [];
+    return blocks[Math.max(0, Math.min(blocks.length-1, state.cursor-1))] || blocks[0] || "";
+  }
+  function markovEcho(seed){
+    if(!state.markov) return;
+    const base = seed || markovSeed() || (state.buffer[state.buffer.length-1]?.text || "");
+    const g = generate(state.markov, base, 22);
+    if(g) state.buffer.push({ text: g, hackled:true, echo:true });
+  }
+
+  function pickRelic(){
+    const items = state.archive?.items || [];
+    if(!items.length) return;
+    if(state.relic && Math.random() < 0.6) return;
+    if(Math.random() < 0.18){
+      state.relic = items[Math.floor(Math.random()*items.length)];
+    }
+  }
+
   function morph(){ document.body.classList.add("morph"); setTimeout(()=>document.body.classList.remove("morph"),160); }
   function applyRotation(){
     const r = ROT[state.clicks % ROT.length];
     const bg = COLORS[r.bg], fg = COLORS[r.fg], btnbg = COLORS[r.btn];
     const btnfg = (r.btn === "black") ? COLORS.white : COLORS.black;
+    const shadow = (r.fg === "black") ? "0 0 10px rgba(5,5,5,.35)" : "0 0 12px rgba(0,166,81,.35)";
     document.documentElement.style.setProperty("--bg", bg);
     document.documentElement.style.setProperty("--fg", fg);
     document.documentElement.style.setProperty("--btnbg", btnbg);
     document.documentElement.style.setProperty("--btnfg", btnfg);
+    document.documentElement.style.setProperty("--shadow", shadow);
     const border = (r.bg === "white") ? "rgba(5,5,5,.20)" : "rgba(243,246,242,.18)";
     document.documentElement.style.setProperty("--border", border);
     document.body.dataset.ink = r.ink;
@@ -180,6 +305,61 @@
     }
   }
 
+  function buildArchiveChoices(){
+    const items = state.archive?.items || [];
+    if(!items.length){
+      return [{ label:"Close archive", onClick: () => { click(); state.archiveOpen=false; render(); persist(); } }];
+    }
+    const pages = Math.max(1, Math.ceil(items.length / ARCHIVE_PAGE));
+    const page = Math.min(state.archivePage, pages - 1);
+    const start = page * ARCHIVE_PAGE;
+    const slice = items.slice(start, start + ARCHIVE_PAGE);
+    const btns = slice.map(item => ({
+      label: item.label || item.id || "Archive file",
+      onClick: () => act(() => { openViewer(item); }, { append:false }),
+    }));
+    if(pages > 1){
+      btns.push({
+        label: `Next page ${page + 1}/${pages}`,
+        onClick: () => act(() => { state.archivePage = (page + 1) % pages; }, { append:false }),
+      });
+    }
+    btns.push({ label:"Close archive", onClick: () => act(() => { state.archiveOpen=false; }, { append:false }) });
+    return btns;
+  }
+
+  function act(fn, { append=false } = {}){
+    click();
+    if(typeof fn === "function") fn();
+    if(!append) markovEcho();
+    render();
+    persist();
+  }
+
+  function lockKeyboard(){
+    const stop = (e) => { e.preventDefault(); };
+    document.addEventListener("keydown", stop, { passive:false });
+    document.addEventListener("keypress", stop, { passive:false });
+    document.addEventListener("keyup", stop, { passive:false });
+  }
+
+  function appendArchiveExtras(btns){
+    if(state.relic){
+      const label = shorten(state.relic.label || state.relic.id || "Archive relic", 44);
+      btns.push({
+        label: `Open relic: ${label}`,
+        onClick: () => act(() => { openViewer(state.relic); state.relic = null; }, { append:false }),
+      });
+    }
+    if((state.archive?.items || []).length){
+      btns.push({
+        label: "Open archive",
+        onClick: () => act(() => { state.archiveOpen = true; }, { append:false }),
+      });
+    }
+    return btns;
+  }
+
   function driftMaybe(){
     if(state.drift < 0.55) return false;
     const p = 0.08 + state.drift * 0.18;
@@ -204,6 +384,7 @@
 
     state.buffer.push({ text:`(worldline drift)`, hackled:false });
     state.cursor = 0;
+    state.chunkStack = [];
     state.drift = clamp01(state.drift + 0.12);
   }
 
@@ -215,11 +396,12 @@
     state.dayNo = days[(idx + delta + days.length) % days.length];
     state.cursor = 0;
     state.buffer = [{ text:`(entering Day ${state.dayNo})`, hackled:false }];
+    state.chunkStack = [];
     if(delta > 0) state.drift = clamp01(state.drift * 0.92);
     else state.drift = clamp01(state.drift + 0.08);
   }
 
-  function appendChunk({ hackle=false }){
+  function appendChunk({ hackle=false, pulse=false }){
     const world = getWorldById(state.worldId);
     const day = getDay(world, state.dayNo);
     if(!world || !day){
@@ -234,14 +416,19 @@
     const start = state.cursor;
     const end = Math.min(blocks.length, start + step);
     const seed = blocks[Math.max(0, start-1)] || blocks[start] || "";
+    const before = state.buffer.length;
+    const hasMarkov = !!state.markov;
+    const pulseIdx = pulse ? Math.floor(Math.random() * Math.max(1, end - start)) : -1;
+    let pulseArmed = pulse;
 
     for(let i=start;i<end;i++){
       const raw = safeText(blocks[i] || "");
       if(!raw.trim()) continue;
 
-      if(hackle){
+      const pulseHit = pulseArmed && (i - start) >= pulseIdx;
+      if(hackle || pulseHit){
         const c = classifyLine(raw);
-        const replace = Math.random() < 0.32;
+        const replace = hasMarkov && (pulseHit || Math.random() < 0.32);
         if(c.kind === "speaker" && replace){
           const g = generate(state.markov, c.txt || seed, 34);
           state.buffer.push({ text: `${c.spk}: ${g || c.txt}`, hackled:true });
@@ -251,16 +438,33 @@
         } else {
           state.buffer.push({ text: raw, hackled:false });
         }
+        if(pulseHit) pulseArmed = false;
       } else {
         state.buffer.push({ text: raw, hackled:false });
       }
     }
 
     state.cursor = end;
+    const added = state.buffer.length - before;
+    if(added > 0){
+      state.chunkStack.push({ cursorStart:start, cursorEnd:end, added, hackle:!!hackle });
+    }
+    if(pulseArmed && hasMarkov) markovEcho(seed);
     if(hackle) state.drift = clamp01(state.drift + 0.10);
     else state.drift = clamp01(state.drift * 0.985 + 0.01);
 
     if(driftMaybe()) driftWorld(true);
+    pickRelic();
+  }
+
+  function rewindChunk(){
+    const last = state.chunkStack.pop();
+    if(!last) return false;
+    const start = Math.max(0, state.buffer.length - last.added);
+    state.buffer.splice(start, last.added);
+    state.cursor = last.cursorStart;
+    state.drift = clamp01(state.drift * 0.96);
+    return true;
   }
 
   function render(){
@@ -271,14 +475,21 @@
     setHUD(world, day);
     renderBuffer();
 
+    if(state.archiveOpen){
+      setQuestion("Archive relay: select a file to view.");
+      setChoices(buildArchiveChoices());
+      return;
+    }
+
     if(!world || !day){
       setQuestion("Archive not loaded: missing data JSONs.");
-      setChoices([
+      const btns = appendArchiveExtras([
         { label:"Reload", onClick: () => { click(); location.reload(); } },
-        { label:"Drift", onClick: () => { click(); driftWorld(false); render(); persist(); } },
-        { label:"Role", onClick: () => { click(); state.roleIdx=(state.roleIdx+1)%ROLES.length; render(); persist(); } },
-        { label:"Continue", onClick: () => { click(); appendChunk({hackle:false}); render(); persist(); } },
+        { label:"Drift", onClick: () => act(() => driftWorld(false)) },
+        { label:"Role", onClick: () => act(() => { state.roleIdx=(state.roleIdx+1)%ROLES.length; }) },
+        { label:"Continue", onClick: () => act(() => appendChunk({hackle:false, pulse:true}), { append:true }) },
       ]);
+      setChoices(btns);
       return;
     }
 
@@ -291,28 +502,35 @@
 
     if(atEnd){
       setQuestion(`Day ${day.day} closes. As ${role}, move forward, loop, drift, or hackle the return.`);
-      setChoices([
-        { label:"Next day", onClick: () => { click(); gotoDay(+1); render(); persist(); } },
-        { label:"Loop back", onClick: () => { click(); gotoDay(-1); render(); persist(); } },
-        { label:"Drift worldline", onClick: () => { click(); driftWorld(true); render(); persist(); } },
-        { label:"Hackle the return", onClick: () => { click(); appendChunk({hackle:true}); render(); persist(); } },
+      const btns = appendArchiveExtras([
+        { label:"Next day", onClick: () => act(() => gotoDay(+1)) },
+        { label:"Loop back", onClick: () => act(() => gotoDay(-1)) },
+        { label:"Back a page", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); }) },
+        { label:"Drift worldline", onClick: () => act(() => driftWorld(true)) },
+        { label:"Hackle the return", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); appendChunk({hackle:true, pulse:true}); }, { append:true }) },
       ]);
+      setChoices(btns);
       return;
     }
 
     setQuestion(`Stay inside the dialogue as ${role}. Each click rotates palette; “Hackle” lets Markov bite the next chunk.`);
-    setChoices([
-      { label:"Continue", onClick: () => { click(); appendChunk({hackle:false}); render(); persist(); } },
-      { label:"Hackle", onClick: () => { click(); appendChunk({hackle:true}); render(); persist(); } },
-      { label:"Change role", onClick: () => { click(); state.roleIdx=(state.roleIdx+1)%ROLES.length; render(); persist(); } },
-      { label:"Drift / Wormhole", onClick: () => { click(); driftWorld(Math.random()<0.6); render(); persist(); } },
+    const btns = appendArchiveExtras([
+      { label:"Continue", onClick: () => act(() => appendChunk({hackle:false, pulse:true}), { append:true }) },
+      { label:"Back a page", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); }) },
+      { label:"Hackle", onClick: () => act(() => appendChunk({hackle:true, pulse:true}), { append:true }) },
+      { label:"Change role", onClick: () => act(() => { state.roleIdx=(state.roleIdx+1)%ROLES.length; }) },
+      { label:"Drift / Wormhole", onClick: () => act(() => driftWorld(Math.random()<0.6)) },
     ]);
+    setChoices(btns);
   }
 
   async function boot(){
+    lockKeyboard();
     await bootBuildStamp();
     state.worlds = await fetchJSON("data/drama_worlds.json");
     state.corpus = await fetchJSON("data/corpus.json").catch(()=>({lines:[]}));
+    state.archive = await fetchJSON("data/archive.json").catch(()=>({items:[]}));
+    hideViewer();
 
     const worlds = state.worlds?.worlds || [];
     state.canonId = state.worlds?.canonical || (worlds[0]?.id || null);
@@ -338,7 +556,7 @@
 
     if(!state.buffer.length){
       state.buffer = [{ text:`(entering Day ${getDay(w,state.dayNo)?.day || state.dayNo})`, hackled:false }];
-      appendChunk({hackle:false});
+      appendChunk({hackle:false, pulse:true});
     }
 
     render();
