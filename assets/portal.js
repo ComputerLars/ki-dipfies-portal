@@ -39,6 +39,8 @@
     prevWorld:null,
     prevDay:null,
     prevCursor:null,
+    coldBooted:false,
+    coldBootDay5:false,
   };
 
   const PRIMARY_WORLD_IDS = ["core","mirror","kopi"];
@@ -58,16 +60,16 @@
     const boldCount = (esc.match(/\*\*/g) || []).length;
     const underlineCount = (esc.match(/\+\+/g) || []).length;
     const underscoreCount = (esc.match(/_/g) || []).length;
-    const oddBold = boldCount % 2 !== 0;
-    const oddUnderscore = underscoreCount % 2 !== 0;
-    if(oddBold) esc = esc.replace(/\*\*/g, "");
+    if(boldCount % 2) esc = esc.replace(/\*\*/g, "");
     if(underlineCount % 2) esc = esc.replace(/\+\+/g, "");
-    if(oddUnderscore) esc = esc.replace(/_/g, "");
+    if(underscoreCount % 2) esc = esc.replace(/_/g, "");
     esc = esc.replace(/\+\+([\s\S]+?)\+\+/g, "<u>$1</u>");
     esc = esc.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>");
     esc = esc.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
     esc = esc.replace(/(^|[^\\w])_([\\s\\S]+?)_(?=[^\\w]|$)/g, "$1<em>$2</em>");
-    if(oddBold || oddUnderscore) esc = `<em>${esc}</em>`;
+    // strip any leftover stray markers so they don't show
+    esc = esc.replace(/\\*\\*|\\+\\+|_/g, "");
+    esc = esc.replace(/\\*/g, "");
     return esc;
   };
 
@@ -520,19 +522,31 @@
     }
   }
 
-  function coldBootMaybe(){
+  function doColdBoot(){
+    const boot = [
+      { text:"[COLD BOOT]", hackled:false },
+      { text:"MEMORY VECTOR RESET", hackled:false },
+      { text:"LINKING WORLDLINES...", hackled:false },
+      { text:"READY.", hackled:false },
+    ];
+    state.buffer = boot;
+    state.vector = "BOOT";
+    state.chunkStack.push({ cursorStart: state.cursor, cursorEnd: state.cursor, lines: boot.slice(), hackle:false });
+    state.scrollTopNext = true;
+  }
+  function coldBootMaybe(reason){
     if(state.scrollMode) return;
-    if(Math.random() < 0.05){
-      const boot = [
-        { text:"[COLD BOOT]", hackled:false },
-        { text:"MEMORY VECTOR RESET", hackled:false },
-        { text:"LINKING WORLDLINES...", hackled:false },
-        { text:"READY.", hackled:false },
-      ];
-      state.buffer = boot;
-      state.vector = "BOOT";
-      state.chunkStack.push({ cursorStart: state.cursor, cursorEnd: state.cursor, lines: boot.slice(), hackle:false });
-      state.scrollTopNext = true;
+    if(reason === "enter"){
+      if(state.coldBooted) return;
+      state.coldBooted = true;
+      doColdBoot();
+      return;
+    }
+    if(reason === "day5"){
+      if(state.dayNo !== 5) return;
+      if(state.coldBootDay5) return;
+      state.coldBootDay5 = true;
+      doColdBoot();
     }
   }
 
@@ -606,7 +620,6 @@
     }
     state.scrollTopNext = true;
     state.drift = clamp01(state.drift + (hackle ? 0.16 : 0.08));
-    coldBootMaybe();
     return true;
   }
 
@@ -636,6 +649,7 @@
     if(state.scrollMode) enterScrollMode();
     if(delta > 0) state.drift = clamp01(state.drift * 0.92);
     else state.drift = clamp01(state.drift + 0.08);
+    coldBootMaybe("day5");
   }
 
   function appendChunk({ hackle=false } = {}){
@@ -721,7 +735,6 @@
     if(hackle) state.drift = clamp01(state.drift + 0.10);
     else state.drift = clamp01(state.drift * 0.985 + 0.01);
 
-    coldBootMaybe();
   }
 
   function rewindChunk(){
@@ -919,6 +932,7 @@
       appendChunk({hackle:false});
     }
     state.vector = "FLOW";
+    coldBootMaybe("enter");
 
     render();
     persist();
