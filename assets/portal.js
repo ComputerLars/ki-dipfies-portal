@@ -25,6 +25,9 @@
     roleOptions:[],
     speakerIndex:null,
     ghostLines:[],
+    ghostLine:"",
+    scrollMode:false,
+    scrollSnapshot:null,
   };
 
   const TOK_RE = /[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:['’][A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?|[.,!?;:()]/g;
@@ -35,10 +38,11 @@
     const t = safeText(s);
     return t.length > n ? `${t.slice(0, n-1).trim()}…` : t;
   };
+  const normalizeWS = (s) => safeText(s).replace(/\s+/g, " ").trim();
   const formatInline = (s) => {
     const esc = escapeHTML(s);
     const italA = esc.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
-    return italA.replace(/(^|[\\s(])_([^_\\n]+)_(?=[\\s)\\],.!?;:]|$)/g, "$1<em>$2</em>");
+    return italA.replace(/(^|[^\\w])_([^_\\n]+)_(?=[^\\w]|$)/g, "$1<em>$2</em>");
   };
 
   function tokenize(s){ return (safeText(s).match(TOK_RE) || []); }
@@ -200,14 +204,15 @@
   function renderBuffer(){
     const wrap = $("#buffer");
     const html = [];
-    for(const item of state.buffer.slice(-260)){
+    const items = state.scrollMode ? state.buffer : state.buffer.slice(-260);
+    for(const item of items){
       const c = classifyLine(item.text);
       if(c.kind === "empty") continue;
       const cls = ["line"];
       if(c.kind === "stage") cls.push("stage");
       if(item.hackled) cls.push("hackled");
       if(c.kind === "speaker"){
-        html.push(`<p class="${cls.join(" ")}"><span class="spk">${escapeHTML(c.spk)}:</span> ${formatInline(c.txt)}</p>`);
+        html.push(`<p class="${cls.join(" ")}"><span class="spk" data-spk="${escapeHTML(c.spk)}">${escapeHTML(c.spk)}:</span> ${formatInline(c.txt)}</p>`);
       } else {
         html.push(`<p class="${cls.join(" ")}">${formatInline(c.txt)}</p>`);
       }
@@ -221,6 +226,12 @@
     }
   }
 
+  function renderGhost(){
+    const box = $("#ghost-text");
+    if(!box) return;
+    box.textContent = state.ghostLine || "";
+  }
+
   function setQuestion(text){ $("#q").textContent = `> ${text}`; }
   function setChoices(btns){
     const wrap = $("#choices"); wrap.innerHTML = "";
@@ -229,6 +240,34 @@
       el.className = "choice"; el.textContent = b.label; el.onclick = b.onClick;
       wrap.appendChild(el);
     }
+  }
+
+  function enterScrollMode(){
+    const world = getWorldById(state.worldId);
+    const day = getDay(world, state.dayNo);
+    if(!world || !day) return;
+    if(!state.scrollMode){
+      state.scrollSnapshot = {
+        cursor: state.cursor,
+        buffer: state.buffer.slice(),
+        chunkStack: state.chunkStack.slice(),
+      };
+    }
+    state.scrollMode = true;
+    state.buffer = [{ text:`(DAY ${day.day} — FULL SCROLL)`, hackled:false }]
+      .concat((day.blocks || []).map(b => ({ text: b, hackled:false })));
+    state.scrollTopNext = true;
+  }
+
+  function exitScrollMode(){
+    if(state.scrollSnapshot){
+      state.cursor = state.scrollSnapshot.cursor;
+      state.buffer = state.scrollSnapshot.buffer;
+      state.chunkStack = state.scrollSnapshot.chunkStack;
+    }
+    state.scrollSnapshot = null;
+    state.scrollMode = false;
+    state.scrollTopNext = true;
   }
 
   function buildSpeakerIndex(){
@@ -275,11 +314,15 @@
     state.worldId = hit.worldId;
     state.dayNo = hit.dayNo;
     state.cursor = Math.max(0, hit.idx + 1);
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
     state.buffer = [
       { text:`(${name} corridor opens)`, hackled:false },
       { text: hit.line, hackled:false },
     ];
-    state.chunkStack = [];
+    if(!state.scrollMode){
+      state.chunkStack.push({ cursorStart: state.cursor, cursorEnd: state.cursor, lines: state.buffer.slice(), hackle:false });
+    }
     state.scrollTopNext = true;
     state.roleMenu = false;
   }
@@ -288,8 +331,8 @@
     const lines = state.ghostLines || [];
     if(!lines.length) return;
     if(Math.random() < 0.10){
-      const line = lines[Math.floor(Math.random()*lines.length)];
-      if(line) state.buffer.push({ text:`Ghost: ${line}`, hackled:true, echo:true });
+      const line = normalizeWS(lines[Math.floor(Math.random()*lines.length)]);
+      if(line) state.ghostLine = line;
     }
   }
 
@@ -332,10 +375,9 @@
     const start = Math.floor(Math.random() * Math.max(1, blocks.length - span));
     const end = Math.min(blocks.length, start + span);
     const seed = blocks[start] || "";
-    const before = state.buffer.length;
     const hasMarkov = !!state.markov;
 
-    state.buffer.push({ text:"(wormhole splice)", hackled:false });
+    const addedLines = [{ text:"(wormhole splice)", hackled:false }];
 
     for(let i=start;i<end;i++){
       const raw = safeText(blocks[i] || "");
@@ -345,19 +387,21 @@
         const c = classifyLine(raw);
         if(c.kind === "speaker"){
           const g = generate(state.markov, c.txt || seed, 28);
-          state.buffer.push({ text: `${c.spk}: ${g || c.txt}`, hackled:true });
+          addedLines.push({ text: `${c.spk}: ${g || c.txt}`, hackled:true });
         } else {
           const g = generate(state.markov, raw || seed, 28);
-          state.buffer.push({ text: g || raw, hackled:true });
+          addedLines.push({ text: g || raw, hackled:true });
         }
       } else {
-        state.buffer.push({ text: raw, hackled:false });
+        addedLines.push({ text: raw, hackled:false });
       }
     }
 
-    const added = state.buffer.length - before;
-    if(added > 0){
-      state.chunkStack.push({ cursorStart: state.cursor, cursorEnd: state.cursor, added, hackle: !!hackle });
+    if(state.scrollMode){
+      state.buffer = state.buffer.concat(addedLines);
+    } else {
+      state.buffer = addedLines.slice();
+      state.chunkStack.push({ cursorStart: state.cursor, cursorEnd: state.cursor, lines: addedLines.slice(), hackle: !!hackle });
     }
     state.scrollTopNext = true;
     state.drift = clamp01(state.drift + (hackle ? 0.16 : 0.08));
@@ -374,6 +418,7 @@
     state.buffer = [{ text:`(entering Day ${state.dayNo})`, hackled:false }];
     state.chunkStack = [];
     state.scrollTopNext = true;
+    if(state.scrollMode) enterScrollMode();
     if(delta > 0) state.drift = clamp01(state.drift * 0.92);
     else state.drift = clamp01(state.drift + 0.08);
   }
@@ -382,49 +427,75 @@
     const world = getWorldById(state.worldId);
     const day = getDay(world, state.dayNo);
     if(!world || !day){
-      state.buffer.push({ text:"(missing drama data)", hackled:false }); return;
+      const repaired = ensurePlayableWorld();
+      if(repaired){
+        const days = allDayNos(repaired);
+        state.dayNo = days[0] || 1;
+      }
+      state.buffer.push({ text:"(data link lost)", hackled:false });
+      state.scrollTopNext = true;
+      return;
     }
     const blocks = day.blocks || [];
     if(state.cursor >= blocks.length){
       state.buffer.push({ text:`(end of Day ${day.day})`, hackled:false }); return;
     }
 
-    const step = 16;
+    const step = 14;
     const start = state.cursor;
-    const end = Math.min(blocks.length, start + step);
-    const seed = blocks[Math.max(0, start-1)] || blocks[start] || "";
-    const before = state.buffer.length;
+    let i = start;
+    let addedCount = 0;
+    let addedLines = [];
+    const findSeed = (idx) => {
+      for(let j=Math.min(idx, blocks.length-1); j>=0; j--){
+        const raw = safeText(blocks[j] || "").trim();
+        if(raw) return raw;
+      }
+      return blocks[idx] || "";
+    };
+    const seed = findSeed(start);
     const hasMarkov = !!state.markov;
-    const pulseIdx = pulse ? Math.floor(Math.random() * Math.max(1, end - start)) : -1;
+    const pulseIdx = pulse ? Math.floor(Math.random() * step) : -1;
     let pulseArmed = pulse;
 
-    for(let i=start;i<end;i++){
+    while(i < blocks.length && addedCount < step){
       const raw = safeText(blocks[i] || "");
+      i++;
       if(!raw.trim()) continue;
 
-      const pulseHit = pulseArmed && (i - start) >= pulseIdx;
+      const pulseHit = pulseArmed && addedCount >= pulseIdx;
       if(hackle || pulseHit){
         const c = classifyLine(raw);
         const replace = hasMarkov && (pulseHit || Math.random() < 0.32);
         if(c.kind === "speaker" && replace){
           const g = generate(state.markov, c.txt || seed, 34);
-          state.buffer.push({ text: `${c.spk}: ${g || c.txt}`, hackled:true });
+          addedLines.push({ text: `${c.spk}: ${g || c.txt}`, hackled:true });
         } else if(replace){
           const g = generate(state.markov, raw || seed, 34);
-          state.buffer.push({ text: g || raw, hackled:true });
+          addedLines.push({ text: g || raw, hackled:true });
         } else {
-          state.buffer.push({ text: raw, hackled:false });
+          addedLines.push({ text: raw, hackled:false });
         }
         if(pulseHit) pulseArmed = false;
       } else {
-        state.buffer.push({ text: raw, hackled:false });
+        addedLines.push({ text: raw, hackled:false });
       }
+      addedCount++;
     }
 
-    state.cursor = end;
-    const added = state.buffer.length - before;
-    if(added > 0){
-      state.chunkStack.push({ cursorStart:start, cursorEnd:end, added, hackle:!!hackle });
+    state.cursor = i;
+    if(addedLines.length === 0){
+      addedLines.push({ text:"(silence)", hackled:false });
+    }
+
+    if(state.scrollMode){
+      state.buffer = state.buffer.concat(addedLines);
+    } else {
+      state.buffer = addedLines.slice();
+    }
+    state.scrollTopNext = true;
+    if(!state.scrollMode && addedLines.length){
+      state.chunkStack.push({ cursorStart:start, cursorEnd:i, lines: addedLines.slice(), hackle:!!hackle });
     }
     if(pulseArmed && hasMarkov) markovEcho(seed);
     if(hackle) state.drift = clamp01(state.drift + 0.10);
@@ -434,11 +505,13 @@
   }
 
   function rewindChunk(){
-    const last = state.chunkStack.pop();
-    if(!last) return false;
-    const start = Math.max(0, state.buffer.length - last.added);
-    state.buffer.splice(start, last.added);
-    state.cursor = last.cursorStart;
+    if(state.scrollMode) return false;
+    if(state.chunkStack.length <= 1) return false;
+    state.chunkStack.pop();
+    const prev = state.chunkStack[state.chunkStack.length - 1];
+    if(!prev) return false;
+    state.buffer = prev.lines.slice();
+    state.cursor = prev.cursorEnd;
     state.drift = clamp01(state.drift * 0.96);
     state.scrollTopNext = true;
     return true;
@@ -451,6 +524,18 @@
 
     setHUD(world, day);
     renderBuffer();
+    renderGhost();
+
+    if(state.scrollMode){
+      setQuestion(`SCROLL MODE.`);
+      setChoices([
+        { label:"Exit Scroll", onClick: () => act(() => exitScrollMode(), { echo:false }) },
+        { label:"Next Day", onClick: () => act(() => gotoDay(+1), { echo:false }) },
+        { label:"Prev Day", onClick: () => act(() => gotoDay(-1), { echo:false }) },
+        { label:"Role Gate", onClick: () => act(() => openRoleMenu(), { echo:false }) },
+      ]);
+      return;
+    }
 
     if(state.roleMenu){
       setQuestion("ROLE GATE: SELECT CHARACTER.");
@@ -483,7 +568,7 @@
         persist();
         return;
       }
-      setQuestion("Archive not loaded: missing data JSONs.");
+      setQuestion("DATA LINK LOST.");
       setChoices([
         { label:"Reload", onClick: () => { click(); location.reload(); } },
         { label:"Wormhole", onClick: () => act(() => appendWormhole({ hackle:false })) },
@@ -506,6 +591,7 @@
         { label:"Role Gate", onClick: () => act(() => openRoleMenu(), { echo:false }) },
         { label:"Drift / Wormhole", onClick: () => act(() => appendWormhole({ hackle:false })) },
         { label:"Hackle the return", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); appendChunk({hackle:true, pulse:true}); }, { append:true }) },
+        { label:"Scroll Day", onClick: () => act(() => enterScrollMode(), { echo:false }) },
       ]);
       return;
     }
@@ -517,11 +603,25 @@
       { label:"Hackle", onClick: () => act(() => appendChunk({hackle:true, pulse:true}), { append:true }) },
       { label:"Role Gate", onClick: () => act(() => openRoleMenu(), { echo:false }) },
       { label:"Drift / Wormhole", onClick: () => act(() => appendWormhole({ hackle: Math.random() < 0.35 })) },
+      { label:"Scroll Day", onClick: () => act(() => enterScrollMode(), { echo:false }) },
     ]);
   }
 
   async function boot(){
     lockKeyboard();
+    const buf = $("#buffer");
+    if(buf){
+      buf.addEventListener("click", (e) => {
+        const el = e.target.closest(".spk");
+        if(!el) return;
+        const name = el.getAttribute("data-spk") || el.textContent.replace(/:$/,"");
+        if(!name) return;
+        click();
+        jumpToSpeaker(name);
+        render();
+        persist();
+      });
+    }
     await bootBuildStamp();
     state.worlds = await fetchJSON("data/drama_worlds.json");
     state.corpus = await fetchJSON("data/corpus.json").catch(()=>({lines:[]}));
