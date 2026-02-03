@@ -6,8 +6,6 @@
     { bg:"green", fg:"black", btn:"white", ink:"dark" },
     { bg:"white", fg:"black", btn:"green", ink:"dark" },
   ];
-  const ROLES = ["Delegate","Witness","Archivist","Chair","Ghost","Bot"];
-  const ARCHIVE_PAGE = 6;
 
   const state = {
     build:"dev",
@@ -18,33 +16,29 @@
     dayNo:null,
     cursor:0,
     chunkStack:[],
-    roleIdx:0,
     drift:0,
     buffer:[],
     markov:null,
     corpus:null,
-    archive:null,
-    archiveOpen:false,
-    archivePage:0,
-    relic:null,
-    viewer:null,
+    scrollTopNext:false,
+    roleMenu:false,
+    roleOptions:[],
+    speakerIndex:null,
+    ghostLines:[],
   };
 
   const TOK_RE = /[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:['’][A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?|[.,!?;:()]/g;
   const safeText = (x) => (x ?? "").toString();
   const clamp01 = (x) => Math.max(0, Math.min(1, x));
   const escapeHTML = (s) => safeText(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  const shorten = (s, n=40) => {
+  const shorten = (s, n=28) => {
     const t = safeText(s);
-    return t.length > n ? `${t.slice(0, n-3).trim()}...` : t;
+    return t.length > n ? `${t.slice(0, n-1).trim()}…` : t;
   };
-  const dom = {
-    viewer: $("#viewer"),
-    viewerTitle: $("#viewer-title"),
-    viewerMeta: $("#viewer-meta"),
-    viewerText: $("#viewer-text"),
-    viewerFrame: $("#viewer-frame"),
-    viewerActions: $("#viewer-actions"),
+  const formatInline = (s) => {
+    const esc = escapeHTML(s);
+    const italA = esc.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
+    return italA.replace(/(^|[\\s(])_([^_\\n]+)_(?=[\\s)\\],.!?;:]|$)/g, "$1<em>$2</em>");
   };
 
   function tokenize(s){ return (safeText(s).match(TOK_RE) || []); }
@@ -89,88 +83,6 @@
     return detok(out);
   }
 
-  function resolveUrl(path){
-    try{ return new URL(path, location.href).href; }catch{ return path; }
-  }
-
-  function setViewerActions(btns){
-    const wrap = dom.viewerActions;
-    if(!wrap) return;
-    wrap.innerHTML = "";
-    for(const b of btns){
-      const el = document.createElement("div");
-      el.className = "vbtn";
-      el.textContent = b.label;
-      el.onclick = b.onClick;
-      wrap.appendChild(el);
-    }
-  }
-  function showViewer(){
-    if(!dom.viewer) return;
-    dom.viewer.setAttribute("aria-hidden","false");
-  }
-  function hideViewer(){
-    if(!dom.viewer) return;
-    dom.viewer.setAttribute("aria-hidden","true");
-    if(dom.viewerText) dom.viewerText.textContent = "";
-    if(dom.viewerText) dom.viewerText.hidden = true;
-    if(dom.viewerFrame){ dom.viewerFrame.hidden = true; dom.viewerFrame.src = "about:blank"; }
-    if(dom.viewerActions) dom.viewerActions.innerHTML = "";
-    state.viewer = null;
-  }
-  function setViewerText(text){
-    if(dom.viewerText){ dom.viewerText.hidden = false; dom.viewerText.textContent = text; }
-    if(dom.viewerFrame) dom.viewerFrame.hidden = true;
-  }
-  function setViewerFrame(src){
-    if(dom.viewerFrame){ dom.viewerFrame.hidden = false; dom.viewerFrame.src = src; }
-    if(dom.viewerText) dom.viewerText.hidden = true;
-  }
-  async function openViewer(item){
-    if(!item) return;
-    state.viewer = item;
-    state.archiveOpen = false;
-    if(dom.viewerTitle) dom.viewerTitle.textContent = safeText(item.label || item.id || "Archive");
-    if(dom.viewerMeta) dom.viewerMeta.textContent = safeText(item.note || item.type || "");
-    showViewer();
-    setViewerText("Loading...");
-
-    const direct = resolveUrl(item.path || "");
-    const closeBtn = { label:"Close", onClick: () => { click(); hideViewer(); render(); persist(); } };
-    const openBtn = { label:"Open file", onClick: () => { click(); window.open(direct, "_blank", "noopener"); } };
-
-    if(item.type === "text" || item.type === "json"){
-      try{
-        const raw = await fetch(direct, { cache:"no-store" }).then(r => r.text());
-        let out = raw;
-        if(item.type === "json"){
-          try{ out = JSON.stringify(JSON.parse(raw), null, 2); }catch{ out = raw; }
-        }
-        setViewerText(out.trim() || "(empty file)");
-      }catch(err){
-        setViewerText(`(failed to load) ${safeText(err.message || err)}`);
-      }
-      setViewerActions([closeBtn, openBtn]);
-      return;
-    }
-
-    if(item.type === "docx"){
-      const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(direct)}`;
-      setViewerFrame(viewerUrl);
-      setViewerActions([closeBtn, openBtn]);
-      return;
-    }
-
-    if(item.type === "pdf" || item.type === "image"){
-      setViewerFrame(direct);
-      setViewerActions([closeBtn, openBtn]);
-      return;
-    }
-
-    setViewerText("Unsupported file type.");
-    setViewerActions([closeBtn, openBtn]);
-  }
-
   function classifyLine(t){
     const s = safeText(t).trim();
     if(!s) return { kind:"empty", spk:"", txt:"" };
@@ -192,9 +104,26 @@
     catch{ state.build="dev"; }
   }
 
+  function playableWorlds(){
+    const worlds = state.worlds?.worlds || [];
+    return worlds.filter(w => (w.days || []).length);
+  }
   function getWorldById(id){
     const worlds = state.worlds?.worlds || [];
-    return worlds.find(w => w.id === id) || worlds[0] || null;
+    const found = worlds.find(w => w.id === id) || null;
+    if(found && (found.days || []).length) return found;
+    const playable = playableWorlds();
+    if(playable.length) return playable[0];
+    return found || worlds[0] || null;
+  }
+  function ensurePlayableWorld(){
+    const playable = playableWorlds();
+    if(!playable.length) return null;
+    const current = playable.find(w => w.id === state.worldId);
+    if(current) return current;
+    const fallback = playable.find(w => w.id === state.canonId) || playable[0];
+    state.worldId = fallback.id;
+    return fallback;
   }
   function allDayNos(world){
     const days = world?.days || [];
@@ -220,15 +149,6 @@
     if(g) state.buffer.push({ text: g, hackled:true, echo:true });
   }
 
-  function pickRelic(){
-    const items = state.archive?.items || [];
-    if(!items.length) return;
-    if(state.relic && Math.random() < 0.6) return;
-    if(Math.random() < 0.18){
-      state.relic = items[Math.floor(Math.random()*items.length)];
-    }
-  }
-
   function morph(){ document.body.classList.add("morph"); setTimeout(()=>document.body.classList.remove("morph"),160); }
   function applyRotation(){
     const r = ROT[state.clicks % ROT.length];
@@ -244,13 +164,17 @@
     document.documentElement.style.setProperty("--border", border);
     document.body.dataset.ink = r.ink;
   }
-  function click(){ state.clicks++; morph(); applyRotation(); }
+  function click(){
+    state.clicks++;
+    morph();
+    applyRotation();
+  }
 
   function persist(){
     try{
       localStorage.setItem("ki_portal_state", JSON.stringify({
         clicks: state.clicks, worldId: state.worldId, dayNo: state.dayNo, cursor: state.cursor,
-        roleIdx: state.roleIdx, drift: state.drift, buffer: state.buffer.slice(-260),
+        drift: state.drift, buffer: state.buffer.slice(-260),
       }));
     }catch{}
   }
@@ -262,18 +186,15 @@
       if(typeof o.worldId==="string") state.worldId=o.worldId;
       if(typeof o.dayNo==="number") state.dayNo=o.dayNo;
       if(typeof o.cursor==="number") state.cursor=o.cursor;
-      if(typeof o.roleIdx==="number") state.roleIdx=o.roleIdx;
       if(typeof o.drift==="number") state.drift=o.drift;
       if(Array.isArray(o.buffer)) state.buffer=o.buffer;
     }catch{}
   }
 
   function setHUD(world, day){
-    const role = ROLES[state.roleIdx % ROLES.length];
-    const wname = world ? safeText(world.name || world.id || "world") : "world";
-    const d = day ? `Day ${day.day}` : "Day ?";
-    const drift = `${Math.round(state.drift*100)}% drift`;
-    $("#state").textContent = `${d} · ${role} · ${wname} · ${drift}`;
+    const d = day ? `DAY ${day.day}` : "DAY ?";
+    const drift = `DRIFT ${Math.round(state.drift*100)}%`;
+    $("#state").textContent = `${d} // ${drift}`;
   }
 
   function renderBuffer(){
@@ -286,16 +207,21 @@
       if(c.kind === "stage") cls.push("stage");
       if(item.hackled) cls.push("hackled");
       if(c.kind === "speaker"){
-        html.push(`<p class="${cls.join(" ")}"><span class="spk">${escapeHTML(c.spk)}:</span> ${escapeHTML(c.txt)}</p>`);
+        html.push(`<p class="${cls.join(" ")}"><span class="spk">${escapeHTML(c.spk)}:</span> ${formatInline(c.txt)}</p>`);
       } else {
-        html.push(`<p class="${cls.join(" ")}">${escapeHTML(c.txt)}</p>`);
+        html.push(`<p class="${cls.join(" ")}">${formatInline(c.txt)}</p>`);
       }
     }
     wrap.innerHTML = html.join("\n");
-    wrap.scrollTop = wrap.scrollHeight;
+    if(state.scrollTopNext){
+      wrap.scrollTop = 0;
+      state.scrollTopNext = false;
+    } else {
+      wrap.scrollTop = wrap.scrollHeight;
+    }
   }
 
-  function setQuestion(text){ $("#q").textContent = text; }
+  function setQuestion(text){ $("#q").textContent = `> ${text}`; }
   function setChoices(btns){
     const wrap = $("#choices"); wrap.innerHTML = "";
     for(const b of btns){
@@ -305,33 +231,73 @@
     }
   }
 
-  function buildArchiveChoices(){
-    const items = state.archive?.items || [];
-    if(!items.length){
-      return [{ label:"Close archive", onClick: () => { click(); state.archiveOpen=false; render(); persist(); } }];
+  function buildSpeakerIndex(){
+    const worlds = state.worlds?.worlds || [];
+    const map = new Map();
+    for(const w of worlds){
+      for(const d of (w.days || [])){
+        const blocks = d.blocks || [];
+        for(let i=0;i<blocks.length;i++){
+          const raw = safeText(blocks[i] || "").trim();
+          if(!raw) continue;
+          const c = classifyLine(raw);
+          if(c.kind !== "speaker") continue;
+          const name = c.spk;
+          if(!map.has(name)) map.set(name, []);
+          map.get(name).push({ worldId: w.id, dayNo: d.day, idx: i, line: raw });
+        }
+      }
     }
-    const pages = Math.max(1, Math.ceil(items.length / ARCHIVE_PAGE));
-    const page = Math.min(state.archivePage, pages - 1);
-    const start = page * ARCHIVE_PAGE;
-    const slice = items.slice(start, start + ARCHIVE_PAGE);
-    const btns = slice.map(item => ({
-      label: item.label || item.id || "Archive file",
-      onClick: () => act(() => { openViewer(item); }, { append:false }),
-    }));
-    if(pages > 1){
-      btns.push({
-        label: `Next page ${page + 1}/${pages}`,
-        onClick: () => act(() => { state.archivePage = (page + 1) % pages; }, { append:false }),
-      });
-    }
-    btns.push({ label:"Close archive", onClick: () => act(() => { state.archiveOpen=false; }, { append:false }) });
-    return btns;
+    const names = Array.from(map.keys()).filter(n => n.length <= 36);
+    return { map, names };
   }
 
-  function act(fn, { append=false } = {}){
+  function randomSpeakers(count=6){
+    const names = state.speakerIndex?.names || [];
+    if(!names.length) return [];
+    const pool = names.slice();
+    for(let i=pool.length-1;i>0;i--){
+      const j = Math.floor(Math.random() * (i+1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, Math.min(count, pool.length));
+  }
+
+  function openRoleMenu(){
+    state.roleOptions = randomSpeakers(6);
+    state.roleMenu = true;
+  }
+
+  function jumpToSpeaker(name){
+    const hits = state.speakerIndex?.map.get(name);
+    if(!hits || !hits.length) return;
+    const hit = hits[Math.floor(Math.random()*hits.length)];
+    state.worldId = hit.worldId;
+    state.dayNo = hit.dayNo;
+    state.cursor = Math.max(0, hit.idx + 1);
+    state.buffer = [
+      { text:`(${name} corridor opens)`, hackled:false },
+      { text: hit.line, hackled:false },
+    ];
+    state.chunkStack = [];
+    state.scrollTopNext = true;
+    state.roleMenu = false;
+  }
+
+  function ghostMaybe(){
+    const lines = state.ghostLines || [];
+    if(!lines.length) return;
+    if(Math.random() < 0.10){
+      const line = lines[Math.floor(Math.random()*lines.length)];
+      if(line) state.buffer.push({ text:`Ghost: ${line}`, hackled:true, echo:true });
+    }
+  }
+
+  function act(fn, { append=false, echo=true } = {}){
     click();
     if(typeof fn === "function") fn();
-    if(!append) markovEcho();
+    if(echo && !append) markovEcho();
+    ghostMaybe();
     render();
     persist();
   }
@@ -343,49 +309,59 @@
     document.addEventListener("keyup", stop, { passive:false });
   }
 
-  function appendArchiveExtras(btns){
-    if(state.relic){
-      const label = shorten(state.relic.label || state.relic.id || "Archive relic", 44);
-      btns.push({
-        label: `Open relic: ${label}`,
-        onClick: () => act(() => { openViewer(state.relic); state.relic = null; }, { append:false }),
-      });
-    }
-    if((state.archive?.items || []).length){
-      btns.push({
-        label: "Open archive",
-        onClick: () => act(() => { state.archiveOpen = true; }, { append:false }),
-      });
-    }
-    return btns;
-  }
-
   function driftMaybe(){
     if(state.drift < 0.55) return false;
-    const p = 0.08 + state.drift * 0.18;
+    const p = 0.12 + state.drift * 0.28;
     return Math.random() < p;
   }
-
-  function driftWorld(keepDay=true){
-    const worlds = state.worlds?.worlds || [];
-    if(worlds.length < 2) return;
+  function appendWormhole({ hackle=false } = {}){
+    const worlds = playableWorlds();
+    if(!worlds.length) return false;
     const cur = state.worldId;
     let w = worlds[Math.floor(Math.random()*worlds.length)];
-    if(w.id === cur) w = worlds[(worlds.indexOf(w)+1) % worlds.length];
-    state.worldId = w.id;
+    if(w.id === cur && worlds.length > 1){
+      w = worlds[(worlds.indexOf(w)+1) % worlds.length];
+    }
+    const days = w.days || [];
+    if(!days.length) return false;
+    const day = days[Math.floor(Math.random()*days.length)];
+    const blocks = day.blocks || [];
+    if(!blocks.length) return false;
 
-    const world = getWorldById(state.worldId);
-    if(keepDay && world){
-      const d = getDay(world, state.dayNo);
-      state.dayNo = d ? d.day : (allDayNos(world)[0] || 1);
-    } else if(world){
-      state.dayNo = allDayNos(world)[0] || 1;
+    const span = Math.min(blocks.length, Math.floor(Math.random() * 8) + 6);
+    const start = Math.floor(Math.random() * Math.max(1, blocks.length - span));
+    const end = Math.min(blocks.length, start + span);
+    const seed = blocks[start] || "";
+    const before = state.buffer.length;
+    const hasMarkov = !!state.markov;
+
+    state.buffer.push({ text:"(wormhole splice)", hackled:false });
+
+    for(let i=start;i<end;i++){
+      const raw = safeText(blocks[i] || "");
+      if(!raw.trim()) continue;
+      const replace = hasMarkov && (hackle || Math.random() < 0.24);
+      if(replace){
+        const c = classifyLine(raw);
+        if(c.kind === "speaker"){
+          const g = generate(state.markov, c.txt || seed, 28);
+          state.buffer.push({ text: `${c.spk}: ${g || c.txt}`, hackled:true });
+        } else {
+          const g = generate(state.markov, raw || seed, 28);
+          state.buffer.push({ text: g || raw, hackled:true });
+        }
+      } else {
+        state.buffer.push({ text: raw, hackled:false });
+      }
     }
 
-    state.buffer.push({ text:`(worldline drift)`, hackled:false });
-    state.cursor = 0;
-    state.chunkStack = [];
-    state.drift = clamp01(state.drift + 0.12);
+    const added = state.buffer.length - before;
+    if(added > 0){
+      state.chunkStack.push({ cursorStart: state.cursor, cursorEnd: state.cursor, added, hackle: !!hackle });
+    }
+    state.scrollTopNext = true;
+    state.drift = clamp01(state.drift + (hackle ? 0.16 : 0.08));
+    return true;
   }
 
   function gotoDay(delta){
@@ -397,6 +373,7 @@
     state.cursor = 0;
     state.buffer = [{ text:`(entering Day ${state.dayNo})`, hackled:false }];
     state.chunkStack = [];
+    state.scrollTopNext = true;
     if(delta > 0) state.drift = clamp01(state.drift * 0.92);
     else state.drift = clamp01(state.drift + 0.08);
   }
@@ -453,8 +430,7 @@
     if(hackle) state.drift = clamp01(state.drift + 0.10);
     else state.drift = clamp01(state.drift * 0.985 + 0.01);
 
-    if(driftMaybe()) driftWorld(true);
-    pickRelic();
+    if(driftMaybe()) appendWormhole({ hackle: Math.random() < 0.45 });
   }
 
   function rewindChunk(){
@@ -464,64 +440,84 @@
     state.buffer.splice(start, last.added);
     state.cursor = last.cursorStart;
     state.drift = clamp01(state.drift * 0.96);
+    state.scrollTopNext = true;
     return true;
   }
 
   function render(){
-    applyRotation();
     const world = getWorldById(state.worldId);
     const day = getDay(world, state.dayNo);
+    applyRotation();
 
     setHUD(world, day);
     renderBuffer();
 
-    if(state.archiveOpen){
-      setQuestion("Archive relay: select a file to view.");
-      setChoices(buildArchiveChoices());
-      return;
-    }
-
-    if(!world || !day){
-      setQuestion("Archive not loaded: missing data JSONs.");
-      const btns = appendArchiveExtras([
-        { label:"Reload", onClick: () => { click(); location.reload(); } },
-        { label:"Drift", onClick: () => act(() => driftWorld(false)) },
-        { label:"Role", onClick: () => act(() => { state.roleIdx=(state.roleIdx+1)%ROLES.length; }) },
-        { label:"Continue", onClick: () => act(() => appendChunk({hackle:false, pulse:true}), { append:true }) },
-      ]);
+    if(state.roleMenu){
+      setQuestion("ROLE GATE: SELECT CHARACTER.");
+      const btns = state.roleOptions.map(name => ({
+        label: shorten(name.toUpperCase()),
+        onClick: () => act(() => jumpToSpeaker(name), { echo:false }),
+      }));
+      btns.push({
+        label: "MORE NAMES",
+        onClick: () => act(() => { state.roleOptions = randomSpeakers(6); }, { echo:false }),
+      });
+      btns.push({
+        label: "EXIT",
+        onClick: () => act(() => { state.roleMenu = false; }, { echo:false }),
+      });
       setChoices(btns);
       return;
     }
 
-    const atEnd = state.cursor >= (day.blocks || []).length;
-    const role = ROLES[state.roleIdx % ROLES.length];
+    if(!world || !day){
+      const repaired = ensurePlayableWorld();
+      if(repaired && (repaired.days || []).length){
+        const days = allDayNos(repaired);
+        state.dayNo = days[0] || 1;
+        state.cursor = 0;
+        state.buffer = [{ text:`(relinking Day ${state.dayNo})`, hackled:false }];
+        state.chunkStack = [];
+        state.scrollTopNext = true;
+        render();
+        persist();
+        return;
+      }
+      setQuestion("Archive not loaded: missing data JSONs.");
+      setChoices([
+        { label:"Reload", onClick: () => { click(); location.reload(); } },
+        { label:"Wormhole", onClick: () => act(() => appendWormhole({ hackle:false })) },
+        { label:"Continue", onClick: () => act(() => appendChunk({hackle:false, pulse:true}), { append:true }) },
+      ]);
+      return;
+    }
 
+    const atEnd = state.cursor >= (day.blocks || []).length;
     if(!state.buffer.length){
       state.buffer.push({ text:`(entering Day ${day.day})`, hackled:false });
     }
 
     if(atEnd){
-      setQuestion(`Day ${day.day} closes. As ${role}, move forward, loop, drift, or hackle the return.`);
-      const btns = appendArchiveExtras([
+      setQuestion(`DAY ${day.day} END. CHOOSE VECTOR.`);
+      setChoices([
         { label:"Next day", onClick: () => act(() => gotoDay(+1)) },
         { label:"Loop back", onClick: () => act(() => gotoDay(-1)) },
         { label:"Back a page", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); }) },
-        { label:"Drift worldline", onClick: () => act(() => driftWorld(true)) },
+        { label:"Role Gate", onClick: () => act(() => openRoleMenu(), { echo:false }) },
+        { label:"Drift / Wormhole", onClick: () => act(() => appendWormhole({ hackle:false })) },
         { label:"Hackle the return", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); appendChunk({hackle:true, pulse:true}); }, { append:true }) },
       ]);
-      setChoices(btns);
       return;
     }
 
-    setQuestion(`Stay inside the dialogue as ${role}. Each click rotates palette; “Hackle” lets Markov bite the next chunk.`);
-    const btns = appendArchiveExtras([
+    setQuestion(`CHOOSE A VECTOR. HACKLE = MARKOV.`);
+    setChoices([
       { label:"Continue", onClick: () => act(() => appendChunk({hackle:false, pulse:true}), { append:true }) },
       { label:"Back a page", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); }) },
       { label:"Hackle", onClick: () => act(() => appendChunk({hackle:true, pulse:true}), { append:true }) },
-      { label:"Change role", onClick: () => act(() => { state.roleIdx=(state.roleIdx+1)%ROLES.length; }) },
-      { label:"Drift / Wormhole", onClick: () => act(() => driftWorld(Math.random()<0.6)) },
+      { label:"Role Gate", onClick: () => act(() => openRoleMenu(), { echo:false }) },
+      { label:"Drift / Wormhole", onClick: () => act(() => appendWormhole({ hackle: Math.random() < 0.35 })) },
     ]);
-    setChoices(btns);
   }
 
   async function boot(){
@@ -529,8 +525,10 @@
     await bootBuildStamp();
     state.worlds = await fetchJSON("data/drama_worlds.json");
     state.corpus = await fetchJSON("data/corpus.json").catch(()=>({lines:[]}));
-    state.archive = await fetchJSON("data/archive.json").catch(()=>({items:[]}));
-    hideViewer();
+    state.ghostLines = await fetch("data/mostdipf_all.txt", { cache:"no-store" })
+      .then(r => r.ok ? r.text() : "")
+      .then(t => t.split(/\r?\n/).map(s => s.trim()).filter(Boolean))
+      .catch(() => []);
 
     const worlds = state.worlds?.worlds || [];
     state.canonId = state.worlds?.canonical || (worlds[0]?.id || null);
@@ -540,19 +538,24 @@
     if(!state.worldId){
       state.worldId = localStorage.getItem("ki_world") || state.canonId || (worlds[0]?.id || null);
     }
+    const w = ensurePlayableWorld() || getWorldById(state.worldId);
     localStorage.setItem("ki_world", state.worldId || "");
 
-    const w = getWorldById(state.worldId);
     const days = allDayNos(w);
-    if(state.dayNo == null) state.dayNo = days.length ? days[0] : 1;
+    if(!days.length) state.dayNo = 1;
+    else if(state.dayNo == null || !days.includes(state.dayNo)) state.dayNo = days[0];
 
-    // Markov mix: corpus lines + canonical drama blocks
+    // Markov mix: corpus lines + canonical drama blocks + mostdipf ghost
     const canon = getWorldById(state.canonId);
     const dramaLines = [];
     (canon?.days || []).forEach(d => (d.blocks||[]).slice(0, 2200).forEach(b => dramaLines.push(b)));
 
-    const mix = (state.corpus.lines || []).slice(0, 3800).concat(dramaLines.slice(0, 2400));
+    const ghost = state.ghostLines.slice(0, 3600);
+    const mix = (state.corpus.lines || []).slice(0, 3000)
+      .concat(dramaLines.slice(0, 2400))
+      .concat(ghost);
     state.markov = buildMarkov(mix.length ? mix : dramaLines);
+    state.speakerIndex = buildSpeakerIndex();
 
     if(!state.buffer.length){
       state.buffer = [{ text:`(entering Day ${getDay(w,state.dayNo)?.day || state.dayNo})`, hackled:false }];
