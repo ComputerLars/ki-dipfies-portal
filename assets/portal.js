@@ -55,10 +55,16 @@
   const normalizeWS = (s) => safeText(s).replace(/\s+/g, " ").trim();
   const formatInline = (s) => {
     let esc = escapeHTML(s);
+    const boldCount = (esc.match(/\*\*/g) || []).length;
+    const underlineCount = (esc.match(/\+\+/g) || []).length;
+    const oddBold = boldCount % 2 !== 0;
+    if(oddBold) esc = esc.replace(/\*\*/g, "");
+    if(underlineCount % 2) esc = esc.replace(/\+\+/g, "");
     esc = esc.replace(/\+\+([\s\S]+?)\+\+/g, "<u>$1</u>");
     esc = esc.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>");
     esc = esc.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
     esc = esc.replace(/(^|[^\\w])_([\\s\\S]+?)_(?=[^\\w]|$)/g, "$1<em>$2</em>");
+    if(oddBold) esc = `<em>${esc}</em>`;
     return esc;
   };
 
@@ -531,7 +537,7 @@
     click();
     if(typeof fn === "function") fn();
     state.vector = vector;
-    if(echo && !append) markovEcho();
+    if(echo && !append && vector === "HACKLE") markovEcho();
     ghostMaybe();
     render();
     persist();
@@ -570,7 +576,7 @@
     for(let i=start;i<end;i++){
       const raw = safeText(blocks[i] || "");
       if(!raw.trim()) continue;
-      const replace = hasMarkov && (hackle || Math.random() < 0.24);
+      const replace = hackle && hasMarkov && (Math.random() < 0.32);
       if(replace){
         const c = classifyLine(raw);
         if(c.kind === "speaker"){
@@ -629,7 +635,7 @@
     else state.drift = clamp01(state.drift + 0.08);
   }
 
-  function appendChunk({ hackle=false, pulse=false }){
+  function appendChunk({ hackle=false } = {}){
     const world = getWorldById(state.worldId);
     const day = getDay(world, state.dayNo);
     if(!world || !day){
@@ -661,8 +667,8 @@
     };
     const seed = findSeed(start);
     const hasMarkov = !!state.markov;
-    const pulseIdx = pulse ? Math.floor(Math.random() * step) : -1;
-    let pulseArmed = pulse;
+    const pulseIdx = -1;
+    let pulseArmed = false;
 
     while(i < blocks.length && addedCount < step){
       const raw = safeText(blocks[i] || "");
@@ -672,7 +678,7 @@
       const pulseHit = pulseArmed && addedCount >= pulseIdx;
       if(hackle || pulseHit){
         const c = classifyLine(raw);
-        const replace = hasMarkov && (pulseHit || Math.random() < 0.32);
+        const replace = hackle && hasMarkov && (pulseHit || Math.random() < 0.32);
         if(c.kind === "speaker" && replace){
           const g = generate(state.markov, c.txt || seed, 34);
           addedLines.push({ text: `${c.spk}: ${g || c.txt}`, hackled:true });
@@ -708,7 +714,7 @@
     if(!state.scrollMode && addedLines.length){
       state.chunkStack.push({ cursorStart:start, cursorEnd:i, lines: addedLines.slice(), hackle:!!hackle });
     }
-    if(pulseArmed && hasMarkov) markovEcho(seed);
+    if(pulseArmed && hasMarkov && hackle) markovEcho(seed);
     if(hackle) state.drift = clamp01(state.drift + 0.10);
     else state.drift = clamp01(state.drift * 0.985 + 0.01);
 
@@ -748,8 +754,10 @@
         { label:"Role Gate", onClick: () => act(() => openRoleMenu(), { echo:false, vector:"ROLE" }) },
       ];
       if(futureAvailable){
-        if(inFuture) scrollChoices.push({ label:"Return 2026", onClick: () => act(() => returnFromFuture(), { echo:false, vector:"JUMP" }) });
-        else scrollChoices.push({ label:"Time Jump 2027", onClick: () => act(() => timeJumpToFuture(), { echo:false, vector:"JUMP" }) });
+        const jump = inFuture
+          ? { label:"Return 2026", onClick: () => act(() => returnFromFuture(), { echo:false, vector:"JUMP" }) }
+          : { label:"Time Jump 2027", onClick: () => act(() => timeJumpToFuture(), { echo:false, vector:"JUMP" }) };
+        scrollChoices.push(jump);
       }
       setChoices(scrollChoices);
       return;
@@ -789,8 +797,8 @@
       setQuestion("DATA LINK LOST.");
       setChoices([
         { label:"Reload", onClick: () => { click(); location.reload(); } },
-        { label:"Wormhole", onClick: () => act(() => appendWormhole({ hackle:false }), { vector:"WORMHOLE" }) },
-        { label:"Continue", onClick: () => act(() => appendChunk({hackle:false, pulse:true}), { append:true, vector:"FLOW" }) },
+        { label:"Wormhole", onClick: () => act(() => appendWormhole({ hackle:false }), { echo:false, vector:"WORMHOLE" }) },
+        { label:"Continue", onClick: () => act(() => appendChunk({hackle:false}), { append:true, vector:"FLOW" }) },
       ]);
       return;
     }
@@ -807,12 +815,14 @@
         { label:"Prev day/world", onClick: () => act(() => gotoDay(-1), { vector:"LOOP" }) },
         { label:"Back a page", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); }, { vector:"BACK" }) },
         { label:"Role Gate", onClick: () => act(() => openRoleMenu(), { echo:false, vector:"ROLE" }) },
-        { label:"Drift / Wormhole", onClick: () => act(() => appendWormhole({ hackle:false }), { vector:"WORMHOLE" }) },
-        { label:"Hackle the return", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); appendChunk({hackle:true, pulse:true}); }, { append:true, vector:"HACKLE" }) },
+        { label:"Drift / Wormhole", onClick: () => act(() => appendWormhole({ hackle:false }), { echo:false, vector:"WORMHOLE" }) },
+        { label:"Hackle the return", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); appendChunk({hackle:true}); }, { append:true, vector:"HACKLE" }) },
       ];
       if(futureAvailable){
-        if(inFuture) endChoices.push({ label:"Return 2026", onClick: () => act(() => returnFromFuture(), { vector:"JUMP" }) });
-        else endChoices.push({ label:"Time Jump 2027", onClick: () => act(() => timeJumpToFuture(), { vector:"JUMP" }) });
+        const jump = inFuture
+          ? { label:"Return 2026", onClick: () => act(() => returnFromFuture(), { vector:"JUMP" }) }
+          : { label:"Time Jump 2027", onClick: () => act(() => timeJumpToFuture(), { vector:"JUMP" }) };
+        endChoices.push(jump);
       }
       endChoices.push({ label:"Scroll Day", onClick: () => act(() => enterScrollMode(), { echo:false, vector:"SCROLL" }) });
       setChoices(endChoices);
@@ -821,15 +831,17 @@
 
     setQuestion(`CHOOSE A VECTOR. HACKLE = MARKOV.`);
     const baseChoices = [
-      { label:"Continue", onClick: () => act(() => appendChunk({hackle:false, pulse:true}), { append:true, vector:"FLOW" }) },
+      { label:"Continue", onClick: () => act(() => appendChunk({hackle:false}), { append:true, vector:"FLOW" }) },
       { label:"Back a page", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); }, { vector:"BACK" }) },
-      { label:"Hackle", onClick: () => act(() => appendChunk({hackle:true, pulse:true}), { append:true, vector:"HACKLE" }) },
+      { label:"Hackle", onClick: () => act(() => appendChunk({hackle:true}), { append:true, vector:"HACKLE" }) },
       { label:"Role Gate", onClick: () => act(() => openRoleMenu(), { echo:false, vector:"ROLE" }) },
-      { label:"Drift / Wormhole", onClick: () => act(() => appendWormhole({ hackle: Math.random() < 0.35 }), { vector:"WORMHOLE" }) },
+      { label:"Drift / Wormhole", onClick: () => act(() => appendWormhole({ hackle:false }), { echo:false, vector:"WORMHOLE" }) },
     ];
     if(futureAvailable){
-      if(inFuture) baseChoices.push({ label:"Return 2026", onClick: () => act(() => returnFromFuture(), { vector:"JUMP" }) });
-      else baseChoices.push({ label:"Time Jump 2027", onClick: () => act(() => timeJumpToFuture(), { vector:"JUMP" }) });
+      const jump = inFuture
+        ? { label:"Return 2026", onClick: () => act(() => returnFromFuture(), { vector:"JUMP" }) }
+        : { label:"Time Jump 2027", onClick: () => act(() => timeJumpToFuture(), { vector:"JUMP" }) };
+      baseChoices.push(jump);
     }
     baseChoices.push({ label:"Scroll Day", onClick: () => act(() => enterScrollMode(), { echo:false, vector:"SCROLL" }) });
     setChoices(baseChoices);
@@ -901,7 +913,7 @@
 
     if(!state.buffer.length){
       state.buffer = [{ text:`(entering Day ${getDay(w,state.dayNo)?.day || state.dayNo})`, hackled:false }];
-      appendChunk({hackle:false, pulse:true});
+      appendChunk({hackle:false});
     }
     state.vector = "FLOW";
 
