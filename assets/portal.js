@@ -57,14 +57,17 @@
     let esc = escapeHTML(s);
     const boldCount = (esc.match(/\*\*/g) || []).length;
     const underlineCount = (esc.match(/\+\+/g) || []).length;
+    const underscoreCount = (esc.match(/_/g) || []).length;
     const oddBold = boldCount % 2 !== 0;
+    const oddUnderscore = underscoreCount % 2 !== 0;
     if(oddBold) esc = esc.replace(/\*\*/g, "");
     if(underlineCount % 2) esc = esc.replace(/\+\+/g, "");
+    if(oddUnderscore) esc = esc.replace(/_/g, "");
     esc = esc.replace(/\+\+([\s\S]+?)\+\+/g, "<u>$1</u>");
     esc = esc.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>");
     esc = esc.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
     esc = esc.replace(/(^|[^\\w])_([\\s\\S]+?)_(?=[^\\w]|$)/g, "$1<em>$2</em>");
-    if(oddBold) esc = `<em>${esc}</em>`;
+    if(oddBold || oddUnderscore) esc = `<em>${esc}</em>`;
     return esc;
   };
 
