@@ -35,6 +35,8 @@
     scrollMode:false,
     scrollSnapshot:null,
     timeMenu:false,
+    mapMenu:false,
+    mapSnapshot:null,
     keywordIndex:null,
     vector:"BOOT",
     prevWorld:null,
@@ -218,7 +220,9 @@
     if(world?.era) return String(world.era);
     const id = world?.id || "";
     const m = id.match(/\b(19|20)\d{2}\b/);
-    return m ? m[0] : null;
+    if(m) return m[0];
+    if(PRIMARY_WORLD_IDS.includes(id)) return PRESENT_ERA;
+    return null;
   }
   function eraGroups(){
     const map = new Map();
@@ -500,6 +504,7 @@
     const day = getDay(world, state.dayNo);
     if(!world || !day) return;
     state.timeMenu = false;
+    state.mapMenu = false;
     if(!state.scrollMode){
       state.scrollSnapshot = {
         cursor: state.cursor,
@@ -601,8 +606,95 @@
 
   function openRoleMenu(){
     state.timeMenu = false;
+    state.mapMenu = false;
     state.roleOptions = randomSpeakers(6);
     state.roleMenu = true;
+  }
+  function sortedEraWorlds(era){
+    const groups = eraGroups();
+    const list = (groups.get(era) || []).slice();
+    if(!list.length) return list;
+    if(era === PRESENT_ERA){
+      list.sort((a,b) => {
+        const ai = PRIMARY_WORLD_IDS.indexOf(a.id);
+        const bi = PRIMARY_WORLD_IDS.indexOf(b.id);
+        if(ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+        return a.id.localeCompare(b.id);
+      });
+      return list;
+    }
+    list.sort((a,b)=>{
+      const am = /-mv\\b/.test(a.id) ? 1 : 0;
+      const bm = /-mv\\b/.test(b.id) ? 1 : 0;
+      if(am !== bm) return am - bm;
+      return a.id.localeCompare(b.id);
+    });
+    return list;
+  }
+  function buildEraLabelMap(){
+    const map = new Map();
+    const groups = eraGroups();
+    for(const [era, worlds] of groups.entries()){
+      const ordered = sortedEraWorlds(era);
+      ordered.forEach((w, i) => map.set(w.id, `V.${i+1}`));
+    }
+    return map;
+  }
+  function worldLabel(w, labelMap){
+    if(!w) return "UNKNOWN";
+    if(w.id === "theory-tragedy") return "THEORY TRAGEDY";
+    if(labelMap && labelMap.has(w.id)) return labelMap.get(w.id);
+    return (w.name || w.id || "UNKNOWN").toUpperCase();
+  }
+  function buildMapBuffer(){
+    const groups = eraGroups();
+    const eras = Array.from(groups.keys()).sort();
+    const labelMap = buildEraLabelMap();
+    const lines = [
+      { text:"[WORLD MAP]", hackled:false },
+      { text:"SELECT A NODE BELOW.", hackled:false },
+      { text:"", hackled:false },
+    ];
+    if(!eras.length){
+      lines.push({ text:"(no worlds available)", hackled:false });
+      return lines;
+    }
+    for(const era of eras){
+      const worlds = sortedEraWorlds(era);
+      const row = worlds.map(w => worldLabel(w, labelMap)).join(" <-> ");
+      lines.push({ text:`ERA ${era}: ${row}`, hackled:false });
+    }
+    return lines;
+  }
+  function enterMapMenu(){
+    state.timeMenu = false;
+    state.roleMenu = false;
+    if(!state.mapMenu){
+      state.mapSnapshot = {
+        cursor: state.cursor,
+        buffer: state.buffer.slice(),
+        chunkStack: state.chunkStack.slice(),
+        scrollMode: state.scrollMode,
+        scrollSnapshot: state.scrollSnapshot,
+      };
+    }
+    state.mapMenu = true;
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
+    state.buffer = buildMapBuffer();
+    state.scrollTopNext = true;
+  }
+  function exitMapMenu(){
+    if(state.mapSnapshot){
+      state.cursor = state.mapSnapshot.cursor;
+      state.buffer = state.mapSnapshot.buffer;
+      state.chunkStack = state.mapSnapshot.chunkStack;
+      state.scrollMode = state.mapSnapshot.scrollMode;
+      state.scrollSnapshot = state.mapSnapshot.scrollSnapshot;
+    }
+    state.mapSnapshot = null;
+    state.mapMenu = false;
+    state.scrollTopNext = true;
   }
 
   function jumpToSpeaker(name){
@@ -892,6 +984,7 @@
         { label:"Prev World", onClick: () => act(() => gotoDay(-1), { echo:false, vector:"LOOP" }) },
         { label:"Role", onClick: () => act(() => openRoleMenu(), { echo:false, vector:"ROLE" }) },
       ];
+      scrollChoices.push({ label:"Map", onClick: () => act(() => enterMapMenu(), { echo:false, vector:"MAP" }) });
       if(futureAvailable){
         scrollChoices.push({ label:"Time Jump", onClick: () => act(() => { state.timeMenu = true; }, { echo:false, vector:"JUMP" }) });
       }
@@ -913,6 +1006,39 @@
         label: "EXIT",
         onClick: () => act(() => { state.roleMenu = false; }, { echo:false, vector:"FLOW" }),
       });
+      setChoices(btns);
+      return;
+    }
+
+    if(state.mapMenu){
+      setQuestion("WORLD MAP: SELECT WORLD.");
+      const groups = eraGroups();
+      const eras = Array.from(groups.keys()).sort();
+      const labelMap = buildEraLabelMap();
+      const btns = [];
+      for(const era of eras){
+        const worlds = sortedEraWorlds(era);
+        for(const w of worlds){
+          const label = worldLabel(w, labelMap);
+          btns.push({
+            label: `${era} ${label}`,
+            onClick: () => act(() => {
+              state.worldId = w.id;
+              const days = allDayNos(w);
+              state.dayNo = days[0] || 1;
+              state.cursor = 0;
+              state.buffer = [{ text:`(entering Day ${state.dayNo})`, hackled:false }];
+              state.chunkStack = [];
+              state.scrollMode = false;
+              state.scrollSnapshot = null;
+              state.mapMenu = false;
+              state.mapSnapshot = null;
+              state.scrollTopNext = true;
+            }, { echo:false, vector:"MAP" }),
+          });
+        }
+      }
+      btns.push({ label:"Exit", onClick: () => act(() => exitMapMenu(), { echo:false, vector:"FLOW" }) });
       setChoices(btns);
       return;
     }
@@ -974,6 +1100,7 @@
         { label:"Wormhole", onClick: () => act(() => appendWormhole({ hackle:false }), { echo:false, vector:"WORMHOLE" }) },
         { label:"Hackle the return", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); appendChunk({hackle:true}); }, { append:true, vector:"HACKLE" }) },
       ];
+      endChoices.push({ label:"Map", onClick: () => act(() => enterMapMenu(), { echo:false, vector:"MAP" }) });
       if(futureAvailable){
         endChoices.push({ label:"Time Jump", onClick: () => act(() => { state.timeMenu = true; }, { vector:"JUMP" }) });
       }
@@ -990,6 +1117,7 @@
       { label:"Role", onClick: () => act(() => openRoleMenu(), { echo:false, vector:"ROLE" }) },
       { label:"Wormhole", onClick: () => act(() => appendWormhole({ hackle:false }), { echo:false, vector:"WORMHOLE" }) },
     ];
+    baseChoices.push({ label:"Map", onClick: () => act(() => enterMapMenu(), { echo:false, vector:"MAP" }) });
     if(futureAvailable){
       baseChoices.push({ label:"Time Jump", onClick: () => act(() => { state.timeMenu = true; }, { vector:"JUMP" }) });
     }
