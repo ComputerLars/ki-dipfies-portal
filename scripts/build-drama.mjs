@@ -3,13 +3,15 @@ import path from "path";
 import mammoth from "mammoth";
 
 const DOCX_SOURCES = [
-  { id: "core", name: "CORE TRANSCRIPT", file: "source/drama_versions/Long KI-DIPFIES Gipfeltreffen – Stenographic Transcripts (1).docx" },
-  { id: "mirror", name: "MIRROR TRANSCRIPT", file: "source/drama_versions/KI-DIPFIES Mega-Drama – Unified Composite Transcript.docx" },
-  { id: "kopi", name: "KOPI VARIANT", file: "source/drama_versions/KI-DIPFIES_Kopi_minimally_fixed.docx" },
+  { id: "core", name: "CORE TRANSCRIPT", file: "source/drama_versions/Long KI-DIPFIES Gipfeltreffen – Stenographic Transcripts (1).docx", era: "2026" },
+  { id: "mirror", name: "MIRROR TRANSCRIPT", file: "source/drama_versions/KI-DIPFIES Mega-Drama – Unified Composite Transcript.docx", era: "2026" },
+  { id: "kopi", name: "KOPI VARIANT", file: "source/drama_versions/KI-DIPFIES_Kopi_minimally_fixed.docx", era: "2026" },
 ];
 const FUTURE_SOURCES = [
-  { id: "future-2027", name: "FUTURE 2027", file: "source/futures/Gipfeltreffen 2027.docx" },
-  { id: "future-2050", name: "FUTURE 2050", file: "source/futures/Gipfeltreffen 2050.docx" },
+  { id: "future-2027", name: "FUTURE 2027", file: "source/futures/Gipfeltreffen 2027.docx", era: "2027" },
+  { id: "future-2027-mv", name: "FUTURE 2027 // MULTIVERSE", file: "source/futures/Gipfeltreffen 2027 - Multiverse.docx", era: "2027" },
+  { id: "future-2050", name: "FUTURE 2050", file: "source/futures/Gipfeltreffen 2050.docx", era: "2050" },
+  { id: "future-2050-mv", name: "FUTURE 2050 // MULTIVERSE", file: "source/futures/Gipfeltreffen 2050 - Multiverse.docx", era: "2050" },
 ];
 const THEORY_PATH = "/Users/au528457/Downloads/Theory Tragedy_ Post-Farce Protocol (Mao-Dadaist Bureaucratic Edition).txt";
 
@@ -114,7 +116,7 @@ async function main(){
     const blocks = await docxToBlocks(filePath);
     const days = splitDays(blocks);
     const count = days.reduce((sum, d) => sum + d.blocks.length, 0);
-    worlds.push({ id: src.id, name: src.name, days, stats: { days: days.length, blocks: count } });
+    worlds.push({ id: src.id, name: src.name, era: src.era, days, stats: { days: days.length, blocks: count } });
   }
 
   for(const future of FUTURE_SOURCES){
@@ -126,13 +128,13 @@ async function main(){
     const blocks = await docxToBlocks(filePath);
     const days = splitDays(blocks);
     const count = days.reduce((sum, d) => sum + d.blocks.length, 0);
-    worlds.push({ id: future.id, name: future.name, days, stats: { days: days.length, blocks: count } });
+    worlds.push({ id: future.id, name: future.name, era: future.era, days, stats: { days: days.length, blocks: count } });
   }
 
   if(fs.existsSync(THEORY_PATH)){
     const days = parseTheory(THEORY_PATH);
     const count = days.reduce((sum, d) => sum + d.blocks.length, 0);
-    worlds.push({ id: "theory-tragedy", name: "THEORY TRAGEDY", days, stats: { days: days.length, blocks: count } });
+    worlds.push({ id: "theory-tragedy", name: "THEORY TRAGEDY", era: "side", days, stats: { days: days.length, blocks: count } });
   }
 
   const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 15);
@@ -144,6 +146,14 @@ async function main(){
 
   fs.writeFileSync("data/drama_worlds.json", JSON.stringify(out, null, 2));
   fs.writeFileSync("data/build.json", JSON.stringify({ build: stamp }, null, 2));
+  const indexPath = path.resolve("index.html");
+  if(fs.existsSync(indexPath)){
+    const html = fs.readFileSync(indexPath, "utf8");
+    const updated = html
+      .replace(/portal\\.css\\?v=[^\"']+/g, `portal.css?v=${stamp}`)
+      .replace(/portal\\.js\\?v=[^\"']+/g, `portal.js?v=${stamp}`);
+    if(updated !== html) fs.writeFileSync(indexPath, updated);
+  }
   console.log("wrote", worlds.length, "worlds");
 }
 
