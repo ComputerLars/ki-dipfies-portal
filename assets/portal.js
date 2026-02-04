@@ -376,6 +376,7 @@
     BOOT: 0.50,
     KEYWORD: 0.42,
   };
+  const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
   function maybeSprite(reason){
     const list = state.spriteList || [];
     if(!list.length) return;
@@ -386,37 +387,74 @@
     spawnSpriteCluster();
     state.spriteCooldown = now + 1100;
   }
+  function pickClusterCount(maxCount){
+    if(!maxCount) return 1;
+    if(Math.random() < 0.0001) return maxCount; // ~1 in 10,000: full swarm
+    const r = Math.random();
+    if(r < 0.45) return 1;
+    if(r < 0.70) return 2;
+    if(r < 0.84) return 3;
+    if(r < 0.92) return 4;
+    if(r < 0.965) return Math.min(maxCount, 5 + randInt(0, 2)); // 5-7
+    if(r < 0.985) return Math.min(maxCount, 8 + randInt(0, 4)); // 8-12
+    if(r < 0.995) return Math.min(maxCount, 13 + randInt(0, 7)); // 13-20
+    if(r < 0.999) return Math.min(maxCount, 21 + randInt(0, 19)); // 21-40
+    return Math.min(maxCount, 41 + randInt(0, Math.max(0, maxCount - 41))); // 41+
+  }
   function spawnSpriteCluster(){
     const list = state.spriteList || [];
     if(!list.length) return;
     const host = $("#sprites");
     if(!host) return;
-    while(host.children.length > 6){
-      host.removeChild(host.children[0]);
+    const total = pickClusterCount(list.length);
+    if(total > 24){
+      while(host.firstChild) host.removeChild(host.firstChild);
+    } else {
+      while(host.children.length > 10){
+        host.removeChild(host.children[0]);
+      }
     }
-    const count = Math.random() < 0.35 ? 3 : (Math.random() < 0.65 ? 2 : 1);
-    const centerX = 12 + Math.random() * 70;
-    const centerY = 10 + Math.random() * 60;
-    for(let i=0;i<count;i++){
-      const src = list[Math.floor(Math.random() * list.length)];
-      const img = new Image();
-      img.src = src;
-      img.alt = "";
-      img.className = "dipfie";
-      const size = 18 + Math.random() * 24;
-      img.style.height = `${size}vh`;
-      const jitterX = (Math.random() - 0.5) * 18;
-      const jitterY = (Math.random() - 0.5) * 18;
-      const left = Math.max(2, Math.min(82, centerX + jitterX));
-      const top = Math.max(6, Math.min(70, centerY + jitterY));
-      img.style.left = `${left}%`;
-      img.style.top = `${top}%`;
-      img.style.transform = `rotate(${(Math.random()-0.5)*6}deg)`;
-      img.style.opacity = 0.82 + Math.random() * 0.18;
-      host.appendChild(img);
-      const life = 2600 + Math.random() * 3000;
-      setTimeout(() => img.classList.add("fadeout"), life);
-      setTimeout(() => img.remove(), life + 520);
+    const waves = [];
+    if(total <= 4) waves.push(total);
+    else if(total <= 12){
+      const a = Math.ceil(total * 0.6);
+      waves.push(a, total - a);
+    } else {
+      const a = Math.ceil(total * 0.5);
+      const b = Math.ceil(total * 0.3);
+      waves.push(a, b, Math.max(0, total - a - b));
+    }
+    let delay = 0;
+    for(const count of waves){
+      if(!count) continue;
+      const centerX = 12 + Math.random() * 70;
+      const centerY = 10 + Math.random() * 60;
+      const sizeBase = total > 20 ? 10 : 16;
+      const sizeVar = total > 20 ? 12 : 24;
+      setTimeout(() => {
+        for(let i=0;i<count;i++){
+          const src = list[Math.floor(Math.random() * list.length)];
+          const img = new Image();
+          img.src = src;
+          img.alt = "";
+          img.className = "dipfie";
+          const size = sizeBase + Math.random() * sizeVar;
+          img.style.height = `${size}vh`;
+          const jitterX = (Math.random() - 0.5) * 22;
+          const jitterY = (Math.random() - 0.5) * 22;
+          const left = Math.max(2, Math.min(86, centerX + jitterX));
+          const top = Math.max(4, Math.min(72, centerY + jitterY));
+          img.style.left = `${left}%`;
+          img.style.top = `${top}%`;
+          img.style.transform = `rotate(${(Math.random()-0.5)*6}deg)`;
+          img.style.opacity = 0.8 + Math.random() * 0.2;
+          host.appendChild(img);
+          const life = 2400 + Math.random() * 3200;
+          setTimeout(() => img.classList.add("fadeout"), life);
+          setTimeout(() => img.remove(), life + 520);
+        }
+      }, delay);
+      delay += 140;
     }
   }
   function spriteTick(){
