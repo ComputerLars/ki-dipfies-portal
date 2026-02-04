@@ -376,6 +376,7 @@
     BOOT: 0.50,
     KEYWORD: 0.42,
   };
+  const SPRITE_HISTORY_DEPTH = 5;
   const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
   function pickUnique(list, count){
     if(count <= 0) return [];
@@ -424,15 +425,24 @@
         host.removeChild(host.children[0]);
       }
     }
+    const recentSets = state.spriteHistory || [];
+    const recent = new Set();
+    for(const set of recentSets){
+      for(const src of set) recent.add(src);
+    }
     const used = new Set(
       Array.from(host.querySelectorAll(".dipfie"))
         .map(el => el.dataset?.src)
         .filter(Boolean)
     );
-    const pool = list.filter(src => !used.has(src));
+    let pool = list.filter(src => !used.has(src) && !recent.has(src));
+    if(pool.length === 0){
+      pool = list.filter(src => !used.has(src));
+    }
     total = Math.min(total, pool.length);
     if(total <= 0) return;
     const chosen = pickUnique(pool, total);
+    state.spriteHistory = [...recentSets, new Set(chosen)].slice(-SPRITE_HISTORY_DEPTH);
     const waves = [];
     if(total <= 4) waves.push(total);
     else if(total <= 12){
