@@ -34,6 +34,13 @@ const SAGER_SOURCES = [
   { name: "SAGER", file: "source/sager/syntetische_sager.docx", out: "data/sager.txt" },
 ];
 
+const stripImages = (html) => html
+  .replace(/<img[^>]*>/gi, "")
+  .replace(/<svg[\s\S]*?<\/svg>/gi, "")
+  .replace(/<picture[\s\S]*?<\/picture>/gi, "")
+  .replace(/<object[\s\S]*?<\/object>/gi, "")
+  .replace(/<embed[^>]*>/gi, "");
+
 const stripTags = (html) => html
   .replace(/<br\s*\/?>/gi, "\n")
   .replace(/<[^>]+>/g, "")
@@ -58,7 +65,7 @@ const isTranslatorNoise = (text) => {
 
 function extractBlocks(html){
   if(!html) return [];
-  const normalized = html.replace(/\r/g, "").trim();
+  const normalized = stripImages(html).replace(/\r/g, "").trim();
   if(!normalized) return [];
   const blocks = [];
   const rx = /<(p|h[1-6])\b[^>]*>([\s\S]*?)<\/\1>/gi;
