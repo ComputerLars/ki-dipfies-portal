@@ -37,6 +37,7 @@
     ghostLine:"",
     spriteList:[],
     spriteCooldown:0,
+    nextSpriteAt:0,
     scrollMode:false,
     scrollSnapshot:null,
     timeMenu:false,
@@ -382,32 +383,49 @@
     if(now < state.spriteCooldown) return;
     const p = SPRITE_PROB[reason] ?? 0.12;
     if(Math.random() > p) return;
-    spawnSprite();
-    state.spriteCooldown = now + 2400;
+    spawnSpriteCluster();
+    state.spriteCooldown = now + 1100;
   }
-  function spawnSprite(){
+  function spawnSpriteCluster(){
     const list = state.spriteList || [];
     if(!list.length) return;
     const host = $("#sprites");
     if(!host) return;
-    if(host.children.length > 2){
+    while(host.children.length > 6){
       host.removeChild(host.children[0]);
     }
-    const src = list[Math.floor(Math.random() * list.length)];
-    const img = new Image();
-    img.src = src;
-    img.alt = "";
-    img.className = "dipfie";
-    const size = 20 + Math.random() * 20;
-    img.style.height = `${size}vh`;
-    const left = 4 + Math.random() * 68;
-    const top = 10 + Math.random() * 60;
-    img.style.left = `${left}%`;
-    img.style.top = `${top}%`;
-    host.appendChild(img);
-    const life = 2600 + Math.random() * 2600;
-    setTimeout(() => img.classList.add("fadeout"), life);
-    setTimeout(() => img.remove(), life + 520);
+    const count = Math.random() < 0.35 ? 3 : (Math.random() < 0.65 ? 2 : 1);
+    const centerX = 12 + Math.random() * 70;
+    const centerY = 10 + Math.random() * 60;
+    for(let i=0;i<count;i++){
+      const src = list[Math.floor(Math.random() * list.length)];
+      const img = new Image();
+      img.src = src;
+      img.alt = "";
+      img.className = "dipfie";
+      const size = 18 + Math.random() * 24;
+      img.style.height = `${size}vh`;
+      const jitterX = (Math.random() - 0.5) * 18;
+      const jitterY = (Math.random() - 0.5) * 18;
+      const left = Math.max(2, Math.min(82, centerX + jitterX));
+      const top = Math.max(6, Math.min(70, centerY + jitterY));
+      img.style.left = `${left}%`;
+      img.style.top = `${top}%`;
+      img.style.transform = `rotate(${(Math.random()-0.5)*6}deg)`;
+      img.style.opacity = 0.82 + Math.random() * 0.18;
+      host.appendChild(img);
+      const life = 2600 + Math.random() * 3000;
+      setTimeout(() => img.classList.add("fadeout"), life);
+      setTimeout(() => img.remove(), life + 520);
+    }
+  }
+  function spriteTick(){
+    if(!state.spriteList || !state.spriteList.length) return;
+    const now = Date.now();
+    if(!state.nextSpriteAt) state.nextSpriteAt = now + 20000 + Math.random() * 25000;
+    if(now < state.nextSpriteAt) return;
+    spawnSpriteCluster();
+    state.nextSpriteAt = now + 20000 + Math.random() * 40000;
   }
   function hasHotword(lines){
     if(!lines || !lines.length) return false;
@@ -859,6 +877,7 @@
     if(echo && !append && vector === "HACKLE") markovEcho();
     if(vector === "HACKLE") forceGhost();
     maybeSprite(vector);
+    spriteTick();
     ghostMaybe();
     render();
     persist();
@@ -1329,6 +1348,7 @@
     }
     state.vector = "FLOW";
     coldBootMaybe("enter");
+    spriteTick();
 
     render();
     persist();
