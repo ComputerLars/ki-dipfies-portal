@@ -389,7 +389,7 @@
   }
   function pickClusterCount(maxCount){
     if(!maxCount) return 1;
-    if(Math.random() < 0.0001) return maxCount; // ~1 in 10,000: full swarm
+    if(Math.random() < 0.003) return maxCount; // ~1 in 333: full swarm
     const r = Math.random();
     if(r < 0.45) return 1;
     if(r < 0.70) return 2;
