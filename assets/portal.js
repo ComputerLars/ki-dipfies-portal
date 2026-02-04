@@ -45,12 +45,7 @@
   };
 
   const PRIMARY_WORLD_IDS = ["core","mirror","kopi"];
-  const FUTURE_WORLDS = [
-    { id:"future-2027", label:"2027", year:"2027" },
-    { id:"future-2050", label:"2050", year:"2050" },
-  ];
-  const isFutureWorld = (id) => FUTURE_WORLDS.some(f => f.id === id);
-  const futureMeta = (id) => FUTURE_WORLDS.find(f => f.id === id);
+  const PRESENT_ERA = "2026";
 
   const TOK_RE = /[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:['’][A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?|[.,!?;:()]/g;
   const safeText = (x) => (x ?? "").toString();
@@ -217,28 +212,49 @@
   function hasWorld(id){
     return playableWorlds().some(w => w.id === id);
   }
-  function availableFutures(){
-    return playableWorlds().filter(w => isFutureWorld(w.id));
+  function worldEra(world){
+    if(world?.era) return String(world.era);
+    const id = world?.id || "";
+    const m = id.match(/\b(19|20)\d{2}\b/);
+    return m ? m[0] : null;
   }
-  function futureYear(id){
-    const meta = futureMeta(id);
-    if(meta?.year) return meta.year;
-    const m = (id || "").match(/\d{4}/);
-    return m ? m[0] : "future";
+  function eraGroups(){
+    const map = new Map();
+    for(const w of playableWorlds()){
+      const era = worldEra(w);
+      if(!era) continue;
+      if(w.id === "theory-tragedy") continue;
+      if(!map.has(era)) map.set(era, []);
+      map.get(era).push(w);
+    }
+    return map;
   }
-  function timeJumpToFuture(targetId){
-    const future = getWorldById(targetId);
-    if(!future) return false;
-    if(!isFutureWorld(state.worldId)){
+  function erasForTimeMenu(){
+    const groups = eraGroups();
+    const eras = Array.from(groups.keys()).filter(e => e !== PRESENT_ERA);
+    eras.sort();
+    return eras.map(e => ({ era: e, worlds: groups.get(e) || [] }));
+  }
+  function pickEraWorld(era){
+    const groups = eraGroups();
+    const list = (groups.get(era) || []).slice();
+    if(!list.length) return null;
+    return list[Math.floor(Math.random() * list.length)];
+  }
+  function timeJumpToEra(era){
+    const target = pickEraWorld(era);
+    if(!target) return false;
+    const currentEra = worldEra(getWorldById(state.worldId)) || PRESENT_ERA;
+    if(currentEra === PRESENT_ERA && era !== PRESENT_ERA){
       state.prevWorld = state.worldId;
       state.prevDay = state.dayNo;
       state.prevCursor = state.cursor;
     }
-    state.worldId = future.id;
-    const days = allDayNos(future);
+    state.worldId = target.id;
+    const days = allDayNos(target);
     state.dayNo = days[0] || 1;
     state.cursor = 0;
-    state.buffer = [{ text:`(time jump: ${futureYear(future.id)})`, hackled:false }];
+    state.buffer = [{ text:`(time jump: ${era})`, hackled:false }];
     state.chunkStack = [];
     state.scrollMode = false;
     state.scrollSnapshot = null;
@@ -246,16 +262,16 @@
     return true;
   }
   function returnFromFuture(){
-    if(!isFutureWorld(state.worldId)) return false;
-    const fromYear = futureYear(state.worldId);
-    const target = getWorldById(state.prevWorld || state.canonId);
+    const currentEra = worldEra(getWorldById(state.worldId)) || PRESENT_ERA;
+    if(currentEra === PRESENT_ERA) return false;
+    const target = getWorldById(state.prevWorld || state.canonId) || pickEraWorld(PRESENT_ERA);
     if(!target) return false;
     state.worldId = target.id;
     const days = allDayNos(target);
     const day = (state.prevDay && days.includes(state.prevDay)) ? state.prevDay : (days[0] || 1);
     state.dayNo = day;
     state.cursor = state.prevCursor || 0;
-    state.buffer = [{ text:`(returning from ${fromYear})`, hackled:false }];
+    state.buffer = [{ text:`(returning from ${currentEra})`, hackled:false }];
     state.chunkStack = [];
     state.scrollMode = false;
     state.scrollSnapshot = null;
@@ -266,7 +282,10 @@
     return true;
   }
   function cycleWorld(delta){
-    const list = primaryWorlds();
+    const current = getWorldById(state.worldId);
+    const era = worldEra(current) || PRESENT_ERA;
+    const groups = eraGroups();
+    const list = groups.get(era) || primaryWorlds();
     if(!list.length) return null;
     const idx = Math.max(0, list.findIndex(w => w.id === state.worldId));
     const next = list[(idx + delta + list.length) % list.length];
@@ -823,9 +842,10 @@
   function render(){
     const world = getWorldById(state.worldId);
     const day = getDay(world, state.dayNo);
-    const futures = availableFutures();
-    const futureAvailable = futures.length > 0;
-    const inFuture = isFutureWorld(state.worldId);
+    const timeEras = erasForTimeMenu();
+    const futureAvailable = timeEras.length > 0;
+    const currentEra = worldEra(world) || PRESENT_ERA;
+    const inFuture = currentEra !== PRESENT_ERA;
     applyRotation();
 
     setHUD(world, day);
@@ -867,9 +887,9 @@
 
     if(state.timeMenu){
       setQuestion("TIME JUMP: SELECT YEAR.");
-      const btns = futures.map(f => ({
-        label: futureMeta(f.id)?.label || f.id.toUpperCase(),
-        onClick: () => act(() => { timeJumpToFuture(f.id); state.timeMenu = false; }, { echo:false, vector:"JUMP" }),
+      const btns = timeEras.map(({ era }) => ({
+        label: era,
+        onClick: () => act(() => { timeJumpToEra(era); state.timeMenu = false; }, { echo:false, vector:"JUMP" }),
       }));
       if(inFuture){
         btns.unshift({
