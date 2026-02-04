@@ -18,6 +18,7 @@
 
   const state = {
     build:"dev",
+    lang:"en",
     clicks:0,
     worlds:null,
     canonId:null,
@@ -56,6 +57,138 @@
 
   const PRIMARY_WORLD_IDS = ["core","mirror","kopi"];
   const PRESENT_ERA = "2026";
+  const I18N = {
+    en: {
+      lang_label: "LANG",
+      day: "DAY",
+      time: "TIME",
+      drift: "DRIFT",
+      vector: "VECTOR",
+      unknown: "UNKNOWN",
+      theory_name: "THEORY TRAGEDY",
+      world_map: "WORLD MAP",
+      click_node_exit: "CLICK A NODE OR EXIT.",
+      no_worlds: "(no worlds available)",
+      entering_day: ({ day }) => `(entering Day ${day})`,
+      relinking_day: ({ day }) => `(relinking Day ${day})`,
+      end_day: ({ day }) => `(end of Day ${day})`,
+      day_end_shift: ({ day }) => `DAY ${day} END. SHIFT WORLD?`,
+      world_shift: "(world shift)",
+      data_link_lost: "(data link lost)",
+      data_link_question: "DATA LINK LOST.",
+      silence: "(silence)",
+      scroll_heading: ({ day }) => `(DAY ${day} — FULL SCROLL)`,
+      scroll_mode: "SCROLL MODE.",
+      role_gate: "ROLE GATE: SELECT CHARACTER.",
+      more_names: "MORE NAMES",
+      exit: "Exit",
+      map_question: "WORLD MAP: CLICK NODE OR EXIT.",
+      time_jump_question: "TIME JUMP: SELECT YEAR.",
+      return_2026: "Return 2026",
+      reload: "Reload",
+      forward_time: "Forward in time",
+      back_time: "Back in time",
+      next_day: "Next Day",
+      prev_day: "Prev Day",
+      shift_world: "Shift World",
+      role: "Role",
+      wormhole: "Wormhole",
+      hackle: "Hackle",
+      hackle_return: "Hackle the return",
+      map: "Map",
+      time_jump: "Time Jump",
+      collect_day: "Collect a Day",
+      exit_scroll: "Exit Scroll",
+      next_world: "Next World",
+      prev_world: "Prev World",
+      choose_vector: "CHOOSE A VECTOR.",
+      cold_boot: "[COLD BOOT]",
+      memory_reset: "MEMORY VECTOR RESET",
+      linking_worldlines: "LINKING WORLDLINES...",
+      ready: "READY.",
+      boot_failed: "Boot failed.",
+      boot_failed_question: "Boot failed. Missing JSON or wrong publishing root.",
+      gate_opens: ({ word }) => `(${word} gate opens)`,
+      corridor_opens: ({ name }) => `(${name} corridor opens)`,
+      shift_prompt: ">> SHIFT WORLD?",
+    },
+    de: {
+      lang_label: "SPRACHE",
+      day: "TAG",
+      time: "ZEIT",
+      drift: "DRIFT",
+      vector: "VEKTOR",
+      unknown: "UNBEKANNT",
+      theory_name: "THEORIE TRAGOEDIE",
+      world_map: "WELTENKARTE",
+      click_node_exit: "KNOTEN KLICKEN ODER EXIT.",
+      no_worlds: "(keine welten verfuegbar)",
+      entering_day: ({ day }) => `(betrete Tag ${day})`,
+      relinking_day: ({ day }) => `(verknuepfe Tag ${day})`,
+      end_day: ({ day }) => `(Ende von Tag ${day})`,
+      day_end_shift: ({ day }) => `TAG ${day} ENDE. WELT WECHSELN?`,
+      world_shift: "(weltwechsel)",
+      data_link_lost: "(datenlink verloren)",
+      data_link_question: "DATENLINK VERLOREN.",
+      silence: "(stille)",
+      scroll_heading: ({ day }) => `(TAG ${day} — VOLLER SCROLL)`,
+      scroll_mode: "SCROLL MODUS.",
+      role_gate: "ROLLEN-GATE: FIGUR WAEHLEN.",
+      more_names: "MEHR NAMEN",
+      exit: "Exit",
+      map_question: "WELTENKARTE: KNOTEN KLICKEN ODER EXIT.",
+      time_jump_question: "ZEITSPRUNG: JAHR WAEHLEN.",
+      return_2026: "Zurueck 2026",
+      reload: "Neu laden",
+      forward_time: "Vorwaerts in der Zeit",
+      back_time: "Zurueck in der Zeit",
+      next_day: "Naechster Tag",
+      prev_day: "Voriger Tag",
+      shift_world: "Welt wechseln",
+      role: "Rolle",
+      wormhole: "Wurmloch",
+      hackle: "Hackle",
+      hackle_return: "Hackle die Rueckkehr",
+      map: "Karte",
+      time_jump: "Zeitsprung",
+      collect_day: "Tag sammeln",
+      exit_scroll: "Scroll verlassen",
+      next_world: "Naechste Welt",
+      prev_world: "Vorige Welt",
+      choose_vector: "VEKTOR WAEHLEN.",
+      cold_boot: "[KALTSTART]",
+      memory_reset: "SPEICHERVEKTOR RESET",
+      linking_worldlines: "WELTLINIEN VERKNUEPFEN...",
+      ready: "BEREIT.",
+      boot_failed: "Start fehlgeschlagen.",
+      boot_failed_question: "Start fehlgeschlagen. JSON fehlt oder falsches Publish-Root.",
+      gate_opens: ({ word }) => `(${word} Gate oeffnet)`,
+      corridor_opens: ({ name }) => `(${name} Korridor oeffnet)`,
+      shift_prompt: ">> WELT WECHSELN?",
+    },
+  };
+  const VECTOR_LABELS = {
+    en: {
+      FLOW:"FLOW", BACK:"BACK", NEXT:"NEXT", LOOP:"LOOP", ROLE:"ROLE",
+      WORMHOLE:"WORMHOLE", HACKLE:"HACKLE", JUMP:"JUMP", MAP:"MAP",
+      SCROLL:"SCROLL", SHIFT:"SHIFT", GATE:"GATE", BOOT:"BOOT",
+    },
+    de: {
+      FLOW:"FLUSS", BACK:"ZURUECK", NEXT:"VOR", LOOP:"SCHLEIFE", ROLE:"ROLLE",
+      WORMHOLE:"WURMLOCH", HACKLE:"HACKLE", JUMP:"SPRUNG", MAP:"KARTE",
+      SCROLL:"SCROLL", SHIFT:"WECHSEL", GATE:"GATE", BOOT:"BOOT",
+    },
+  };
+  const t = (key, vars) => {
+    const dict = I18N[state.lang] || I18N.en;
+    const val = dict[key] ?? I18N.en[key];
+    if(typeof val === "function") return val(vars || {});
+    return val ?? key;
+  };
+  const vLabel = (vec) => {
+    const dict = VECTOR_LABELS[state.lang] || VECTOR_LABELS.en;
+    return dict[vec] || vec;
+  };
 
   const TOK_RE = /[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:['’][A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?|[.,!?;:()]/g;
   const safeText = (x) => (x ?? "").toString();
@@ -208,6 +341,83 @@
   async function bootBuildStamp(){
     try{ const b = await fetch("data/build.json",{cache:"no-store"}).then(r=>r.json()); state.build=b.build||"dev"; }
     catch{ state.build="dev"; }
+  }
+  function detectLang(){
+    try{
+      const saved = localStorage.getItem("ki_lang");
+      if(saved === "en" || saved === "de") return saved;
+    }catch{}
+    const nav = (navigator.language || "").toLowerCase();
+    return nav.startsWith("de") ? "de" : "en";
+  }
+  function updateLangUI(){
+    const box = $("#lang");
+    if(!box) return;
+    const label = box.querySelector(".lang-label");
+    if(label) label.textContent = t("lang_label");
+    box.querySelectorAll(".lang-option").forEach(el => {
+      el.classList.toggle("active", el.dataset.lang === state.lang);
+    });
+  }
+  async function loadWorldsForLang(lang){
+    const file = (lang === "de") ? "data/drama_worlds.de.json" : "data/drama_worlds.json";
+    try{
+      return await fetchJSON(file);
+    }catch(err){
+      if(lang !== "en"){
+        console.warn("Language load failed, falling back to EN.", err);
+        state.lang = "en";
+        try{ localStorage.setItem("ki_lang", "en"); }catch{}
+        updateLangUI();
+        return await fetchJSON("data/drama_worlds.json");
+      }
+      throw err;
+    }
+  }
+  function rebuildMarkov(){
+    const canon = getWorldById(state.canonId);
+    const dramaLines = [];
+    (canon?.days || []).forEach(d => (d.blocks || []).slice(0, 2200).forEach(b => dramaLines.push(plainText(b))));
+    const ghost = (state.ghostLines || []).slice(0, 3600);
+    const mix = (state.corpus?.lines || []).slice(0, 3000)
+      .concat(dramaLines.slice(0, 2400))
+      .concat(ghost);
+    state.markov = buildMarkov(mix.length ? mix : dramaLines);
+  }
+  async function switchLanguage(lang){
+    if(!lang || lang === state.lang) return;
+    state.lang = (lang === "de") ? "de" : "en";
+    try{ localStorage.setItem("ki_lang", state.lang); }catch{}
+    document.documentElement.lang = state.lang;
+    updateLangUI();
+    state.worlds = await loadWorldsForLang(state.lang);
+    const worlds = state.worlds?.worlds || [];
+    state.canonId = state.worlds?.canonical || (worlds[0]?.id || null);
+    const prevWorld = state.worldId;
+    if(prevWorld && hasWorld(prevWorld)) state.worldId = prevWorld;
+    else state.worldId = state.canonId || (worlds[0]?.id || null);
+    const w = ensurePlayableWorld() || getWorldById(state.worldId);
+    const days = allDayNos(w);
+    state.dayNo = (state.dayNo && days.includes(state.dayNo)) ? state.dayNo : (days[0] || 1);
+    state.cursor = 0;
+    state.buffer = [];
+    state.chunkStack = [];
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
+    state.timeMenu = false;
+    state.mapMenu = false;
+    state.mapSnapshot = null;
+    state.roleMenu = false;
+    state.scrollTopNext = true;
+    state.speakerIndex = buildSpeakerIndex();
+    state.keywordIndex = buildKeywordIndex();
+    rebuildMarkov();
+    if(!state.buffer.length){
+      state.buffer = [{ text:t("entering_day", { day: getDay(w,state.dayNo)?.day || state.dayNo }), hackled:false }];
+      appendChunk({hackle:false});
+    }
+    render();
+    persist();
   }
 
   function playableWorlds(){
@@ -529,7 +739,7 @@
   function persist(){
     try{
       localStorage.setItem("ki_portal_state", JSON.stringify({
-        clicks: state.clicks, worldId: state.worldId, dayNo: state.dayNo, cursor: state.cursor,
+        lang: state.lang, clicks: state.clicks, worldId: state.worldId, dayNo: state.dayNo, cursor: state.cursor,
         drift: state.drift, buffer: state.buffer.slice(-260),
       }));
     }catch{}
@@ -539,12 +749,13 @@
       const raw = localStorage.getItem("ki_portal_state"); if(!raw) return;
       state.hasSaved = true;
       const o = JSON.parse(raw);
+      const langMismatch = o.lang && o.lang !== state.lang;
       if(typeof o.clicks==="number") state.clicks=o.clicks;
       if(typeof o.worldId==="string") state.worldId=o.worldId;
       if(typeof o.dayNo==="number") state.dayNo=o.dayNo;
       if(typeof o.cursor==="number") state.cursor=o.cursor;
       if(typeof o.drift==="number") state.drift=o.drift;
-      if(Array.isArray(o.buffer)) state.buffer=o.buffer;
+      if(Array.isArray(o.buffer) && !langMismatch) state.buffer=o.buffer;
     }catch{}
   }
 
@@ -577,11 +788,11 @@
     return "";
   }
   function setHUD(world, day){
-    const d = day ? `DAY ${day.day}` : (state.dayNo ? `DAY ${state.dayNo}` : "DAY ?");
-    const t = inferTime(world, day);
-    const time = t ? `TIME ${t}` : "TIME --";
-    const drift = `DRIFT ${Math.round(state.drift*100)}%`;
-    const vec = `VECTOR ${state.vector}`;
+    const d = day ? `${t("day")} ${day.day}` : (state.dayNo ? `${t("day")} ${state.dayNo}` : `${t("day")} ?`);
+    const tm = inferTime(world, day);
+    const time = tm ? `${I18N[state.lang]?.time || "TIME"} ${tm}` : `${I18N[state.lang]?.time || "TIME"} --`;
+    const drift = `${I18N[state.lang]?.drift || "DRIFT"} ${Math.round(state.drift*100)}%`;
+    const vec = `${I18N[state.lang]?.vector || "VECTOR"} ${vLabel(state.vector)}`;
     $("#state").textContent = `${d} // ${time} // ${drift} // ${vec}`;
   }
 
@@ -656,7 +867,7 @@
       };
     }
     state.scrollMode = true;
-    state.buffer = [{ text:`(DAY ${day.day} — FULL SCROLL)`, hackled:false }]
+    state.buffer = [{ text:t("scroll_heading", { day: day.day }), hackled:false }]
       .concat((day.blocks || []).map(b => ({ text: b, hackled:false })));
     state.scrollTopNext = true;
   }
@@ -729,7 +940,7 @@
     state.scrollMode = false;
     state.scrollSnapshot = null;
     state.buffer = [
-      { text:`(${word} gate opens)`, hackled:false },
+      { text:t("gate_opens", { word }), hackled:false },
       { text: hit.line, hackled:false },
     ];
     state.chunkStack.push({ cursorStart: state.cursor, cursorEnd: state.cursor, lines: state.buffer.slice(), hackle:false });
@@ -784,10 +995,10 @@
     return map;
   }
   function worldLabel(w, labelMap){
-    if(!w) return "UNKNOWN";
-    if(w.id === "theory-tragedy") return "THEORY TRAGEDY";
+    if(!w) return t("unknown");
+    if(w.id === "theory-tragedy") return t("theory_name");
     if(labelMap && labelMap.has(w.id)) return labelMap.get(w.id);
-    return (w.name || w.id || "UNKNOWN").toUpperCase();
+    return (w.name || w.id || t("unknown")).toUpperCase();
   }
   function buildMapBuffer(){
     const groups = eraGroups();
@@ -795,12 +1006,12 @@
     const labelMap = buildEraLabelMap();
     const node = (w) => `<span class="map-node" data-world="${escapeHTML(w.id)}">${worldLabel(w, labelMap)}</span>`;
     const lines = [
-      { text:"<span class=\"map-line\">[WORLD MAP]</span>", hackled:false },
-      { text:"<span class=\"map-line\">CLICK A NODE OR EXIT.</span>", hackled:false },
+      { text:`<span class="map-line">[${t("world_map")}]</span>`, hackled:false },
+      { text:`<span class="map-line">${t("click_node_exit")}</span>`, hackled:false },
       { text:"", hackled:false },
     ];
     if(!eras.length){
-      lines.push({ text:"(no worlds available)", hackled:false });
+      lines.push({ text:t("no_worlds"), hackled:false });
       return lines;
     }
     const makeRow = (worlds) => worlds.map(w => node(w)).join("&nbsp;--&nbsp;");
@@ -864,7 +1075,7 @@
     state.scrollMode = false;
     state.scrollSnapshot = null;
     state.buffer = [
-      { text:`(${name} corridor opens)`, hackled:false },
+      { text:t("corridor_opens", { name }), hackled:false },
       { text: hit.line, hackled:false },
     ];
     if(!state.scrollMode){
@@ -880,7 +1091,7 @@
     const days = allDayNos(w);
     state.dayNo = days[0] || 1;
     state.cursor = 0;
-    state.buffer = [{ text:`(entering Day ${state.dayNo})`, hackled:false }];
+    state.buffer = [{ text:t("entering_day", { day: state.dayNo }), hackled:false }];
     state.chunkStack = [];
     state.scrollMode = false;
     state.scrollSnapshot = null;
@@ -909,10 +1120,10 @@
 
   function doColdBoot(){
     const boot = [
-      { text:"[COLD BOOT]", hackled:false },
-      { text:"MEMORY VECTOR RESET", hackled:false },
-      { text:"LINKING WORLDLINES...", hackled:false },
-      { text:"READY.", hackled:false },
+      { text:t("cold_boot"), hackled:false },
+      { text:t("memory_reset"), hackled:false },
+      { text:t("linking_worldlines"), hackled:false },
+      { text:t("ready"), hackled:false },
     ];
     state.buffer = boot;
     state.vector = "BOOT";
@@ -1048,10 +1259,10 @@
       days = allDayNos(world);
       state.dayNo = days[days.length - 1] || 1;
     } else {
-      state.dayNo = days[(nextIdx + days.length) % days.length];
+    state.dayNo = days[(nextIdx + days.length) % days.length];
     }
     state.cursor = 0;
-    state.buffer = [{ text:`(entering Day ${state.dayNo})`, hackled:false }];
+    state.buffer = [{ text:t("entering_day", { day: state.dayNo }), hackled:false }];
     state.chunkStack = [];
     state.scrollTopNext = true;
     if(state.scrollMode) enterScrollMode();
@@ -1073,8 +1284,8 @@
     state.dayNo = day;
     state.cursor = 0;
     state.buffer = [
-      { text:"(world shift)", hackled:false },
-      { text:`(entering Day ${day})`, hackled:false },
+      { text:t("world_shift"), hackled:false },
+      { text:t("entering_day", { day }), hackled:false },
     ];
     state.chunkStack = [];
     state.scrollMode = false;
@@ -1097,14 +1308,14 @@
         const days = allDayNos(repaired);
         state.dayNo = days[0] || 1;
       }
-      state.buffer.push({ text:"(data link lost)", hackled:false });
+      state.buffer.push({ text:t("data_link_lost"), hackled:false });
       state.scrollTopNext = true;
       return;
     }
     const blocks = day.blocks || [];
     if(state.cursor >= blocks.length){
-      state.buffer.push({ text:`(end of Day ${day.day})`, hackled:false });
-      state.buffer.push({ text:">> SHIFT WORLD?", hackled:false });
+      state.buffer.push({ text:t("end_day", { day: day.day }), hackled:false });
+      state.buffer.push({ text:t("shift_prompt"), hackled:false });
       return;
     }
 
@@ -1155,7 +1366,7 @@
 
     state.cursor = i;
     if(addedLines.length === 0){
-      addedLines.push({ text:"(silence)", hackled:false });
+      addedLines.push({ text:t("silence"), hackled:false });
     }
 
     if(driftMaybe()){
@@ -1206,33 +1417,33 @@
     renderGhost();
 
     if(state.scrollMode){
-      setQuestion(`SCROLL MODE.`);
+      setQuestion(t("scroll_mode"));
       const scrollChoices = [
-        { label:"Exit Scroll", onClick: () => act(() => exitScrollMode(), { echo:false, vector:"FLOW" }) },
-        { label:"Next World", onClick: () => act(() => gotoDay(+1), { echo:false, vector:"NEXT" }) },
-        { label:"Prev World", onClick: () => act(() => gotoDay(-1), { echo:false, vector:"LOOP" }) },
-        { label:"Role", onClick: () => act(() => openRoleMenu(), { echo:false, vector:"ROLE" }) },
+        { label:t("exit_scroll"), onClick: () => act(() => exitScrollMode(), { echo:false, vector:"FLOW" }) },
+        { label:t("next_world"), onClick: () => act(() => gotoDay(+1), { echo:false, vector:"NEXT" }) },
+        { label:t("prev_world"), onClick: () => act(() => gotoDay(-1), { echo:false, vector:"LOOP" }) },
+        { label:t("role"), onClick: () => act(() => openRoleMenu(), { echo:false, vector:"ROLE" }) },
       ];
-      scrollChoices.push({ label:"Map", onClick: () => act(() => enterMapMenu(), { echo:false, vector:"MAP" }) });
+      scrollChoices.push({ label:t("map"), onClick: () => act(() => enterMapMenu(), { echo:false, vector:"MAP" }) });
       if(futureAvailable){
-        scrollChoices.push({ label:"Time Jump", onClick: () => act(() => { state.timeMenu = true; }, { echo:false, vector:"JUMP" }) });
+        scrollChoices.push({ label:t("time_jump"), onClick: () => act(() => { state.timeMenu = true; }, { echo:false, vector:"JUMP" }) });
       }
       setChoices(scrollChoices);
       return;
     }
 
     if(state.roleMenu){
-      setQuestion("ROLE GATE: SELECT CHARACTER.");
+      setQuestion(t("role_gate"));
       const btns = state.roleOptions.map(name => ({
         label: shorten(name.toUpperCase()),
         onClick: () => act(() => jumpToSpeaker(name), { echo:false, vector:"ROLE" }),
       }));
       btns.push({
-        label: "MORE NAMES",
+        label: t("more_names"),
         onClick: () => act(() => { state.roleOptions = randomSpeakers(6); }, { echo:false, vector:"ROLE" }),
       });
       btns.push({
-        label: "EXIT",
+        label: t("exit"),
         onClick: () => act(() => { state.roleMenu = false; }, { echo:false, vector:"FLOW" }),
       });
       setChoices(btns);
@@ -1240,28 +1451,28 @@
     }
 
     if(state.mapMenu){
-      setQuestion("WORLD MAP: CLICK NODE OR EXIT.");
+      setQuestion(t("map_question"));
     const btns = [
-      { label:"Exit", onClick: () => act(() => exitMapMenu(), { echo:false, vector:"FLOW" }) },
+      { label:t("exit"), onClick: () => act(() => exitMapMenu(), { echo:false, vector:"FLOW" }) },
     ];
       setChoices(btns);
       return;
     }
 
     if(state.timeMenu){
-      setQuestion("TIME JUMP: SELECT YEAR.");
+      setQuestion(t("time_jump_question"));
       const btns = timeEras.map(({ era }) => ({
         label: era,
         onClick: () => act(() => { timeJumpToEra(era); state.timeMenu = false; }, { echo:false, vector:"JUMP" }),
       }));
       if(inFuture){
         btns.unshift({
-          label: "Return 2026",
+          label: t("return_2026"),
           onClick: () => act(() => { returnFromFuture(); state.timeMenu = false; }, { echo:false, vector:"JUMP" }),
         });
       }
       btns.push({
-        label: "Exit",
+        label: t("exit"),
         onClick: () => act(() => { state.timeMenu = false; }, { echo:false, vector:"FLOW" }),
       });
       setChoices(btns);
@@ -1274,60 +1485,60 @@
         const days = allDayNos(repaired);
         state.dayNo = days[0] || 1;
         state.cursor = 0;
-        state.buffer = [{ text:`(relinking Day ${state.dayNo})`, hackled:false }];
+        state.buffer = [{ text:t("relinking_day", { day: state.dayNo }), hackled:false }];
         state.chunkStack = [];
         state.scrollTopNext = true;
         render();
         persist();
         return;
       }
-      setQuestion("DATA LINK LOST.");
+      setQuestion(t("data_link_question"));
       setChoices([
-        { label:"Reload", onClick: () => { click(); location.reload(); } },
-        { label:"Wormhole", onClick: () => act(() => appendWormhole({ hackle:false }), { echo:false, vector:"WORMHOLE" }) },
-        { label:"Forward in time", onClick: () => act(() => appendChunk({hackle:false}), { append:true, vector:"FLOW" }) },
+        { label:t("reload"), onClick: () => { click(); location.reload(); } },
+        { label:t("wormhole"), onClick: () => act(() => appendWormhole({ hackle:false }), { echo:false, vector:"WORMHOLE" }) },
+        { label:t("forward_time"), onClick: () => act(() => appendChunk({hackle:false}), { append:true, vector:"FLOW" }) },
       ]);
       return;
     }
 
     const atEnd = state.cursor >= (day.blocks || []).length;
     if(!state.buffer.length){
-      state.buffer.push({ text:`(entering Day ${day.day})`, hackled:false });
+      state.buffer.push({ text:t("entering_day", { day: day.day }), hackled:false });
     }
 
     if(atEnd){
-      setQuestion(`DAY ${day.day} END. SHIFT WORLD?`);
+      setQuestion(t("day_end_shift", { day: day.day }));
       const endChoices = [
-        { label:"Next Day", onClick: () => act(() => gotoDay(+1), { vector:"NEXT" }) },
-        { label:"Shift World", onClick: () => act(() => shiftWorld(+1), { vector:"SHIFT" }) },
-        { label:"Prev Day", onClick: () => act(() => gotoDay(-1), { vector:"LOOP" }) },
-        { label:"Back in time", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); }, { vector:"BACK" }) },
-        { label:"Role", onClick: () => act(() => openRoleMenu(), { echo:false, vector:"ROLE" }) },
-        { label:"Wormhole", onClick: () => act(() => appendWormhole({ hackle:false }), { echo:false, vector:"WORMHOLE" }) },
-        { label:"Hackle the return", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); appendChunk({hackle:true}); }, { append:true, vector:"HACKLE" }) },
+        { label:t("next_day"), onClick: () => act(() => gotoDay(+1), { vector:"NEXT" }) },
+        { label:t("shift_world"), onClick: () => act(() => shiftWorld(+1), { vector:"SHIFT" }) },
+        { label:t("prev_day"), onClick: () => act(() => gotoDay(-1), { vector:"LOOP" }) },
+        { label:t("back_time"), onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); }, { vector:"BACK" }) },
+        { label:t("role"), onClick: () => act(() => openRoleMenu(), { echo:false, vector:"ROLE" }) },
+        { label:t("wormhole"), onClick: () => act(() => appendWormhole({ hackle:false }), { echo:false, vector:"WORMHOLE" }) },
+        { label:t("hackle_return"), onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); appendChunk({hackle:true}); }, { append:true, vector:"HACKLE" }) },
       ];
-      endChoices.push({ label:"Map", onClick: () => act(() => enterMapMenu(), { echo:false, vector:"MAP" }) });
+      endChoices.push({ label:t("map"), onClick: () => act(() => enterMapMenu(), { echo:false, vector:"MAP" }) });
       if(futureAvailable){
-        endChoices.push({ label:"Time Jump", onClick: () => act(() => { state.timeMenu = true; }, { vector:"JUMP" }) });
+        endChoices.push({ label:t("time_jump"), onClick: () => act(() => { state.timeMenu = true; }, { vector:"JUMP" }) });
       }
-      endChoices.push({ label:"Collect a Day", onClick: () => act(() => enterScrollMode(), { echo:false, vector:"SCROLL" }) });
+      endChoices.push({ label:t("collect_day"), onClick: () => act(() => enterScrollMode(), { echo:false, vector:"SCROLL" }) });
       setChoices(endChoices);
       return;
     }
 
-    setQuestion(`CHOOSE A VECTOR.`);
+    setQuestion(t("choose_vector"));
     const baseChoices = [
-      { label:"Forward in time", onClick: () => act(() => appendChunk({hackle:false}), { append:true, vector:"FLOW" }) },
-      { label:"Back in time", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); }, { vector:"BACK" }) },
-      { label:"Hackle", onClick: () => act(() => appendChunk({hackle:true}), { append:true, vector:"HACKLE" }) },
-      { label:"Role", onClick: () => act(() => openRoleMenu(), { echo:false, vector:"ROLE" }) },
-      { label:"Wormhole", onClick: () => act(() => appendWormhole({ hackle:false }), { echo:false, vector:"WORMHOLE" }) },
+      { label:t("forward_time"), onClick: () => act(() => appendChunk({hackle:false}), { append:true, vector:"FLOW" }) },
+      { label:t("back_time"), onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); }, { vector:"BACK" }) },
+      { label:t("hackle"), onClick: () => act(() => appendChunk({hackle:true}), { append:true, vector:"HACKLE" }) },
+      { label:t("role"), onClick: () => act(() => openRoleMenu(), { echo:false, vector:"ROLE" }) },
+      { label:t("wormhole"), onClick: () => act(() => appendWormhole({ hackle:false }), { echo:false, vector:"WORMHOLE" }) },
     ];
-    baseChoices.push({ label:"Map", onClick: () => act(() => enterMapMenu(), { echo:false, vector:"MAP" }) });
+    baseChoices.push({ label:t("map"), onClick: () => act(() => enterMapMenu(), { echo:false, vector:"MAP" }) });
     if(futureAvailable){
-      baseChoices.push({ label:"Time Jump", onClick: () => act(() => { state.timeMenu = true; }, { vector:"JUMP" }) });
+      baseChoices.push({ label:t("time_jump"), onClick: () => act(() => { state.timeMenu = true; }, { vector:"JUMP" }) });
     }
-    baseChoices.push({ label:"Collect a Day", onClick: () => act(() => enterScrollMode(), { echo:false, vector:"SCROLL" }) });
+    baseChoices.push({ label:t("collect_day"), onClick: () => act(() => enterScrollMode(), { echo:false, vector:"SCROLL" }) });
     setChoices(baseChoices);
   }
 
@@ -1370,8 +1581,19 @@
         }
       });
     }
+    const langBox = $("#lang");
+    if(langBox){
+      langBox.addEventListener("click", (e) => {
+        const opt = e.target.closest(".lang-option");
+        if(!opt) return;
+        switchLanguage(opt.getAttribute("data-lang"));
+      });
+    }
     await bootBuildStamp();
-    state.worlds = await fetchJSON("data/drama_worlds.json");
+    state.lang = detectLang();
+    document.documentElement.lang = state.lang;
+    updateLangUI();
+    state.worlds = await loadWorldsForLang(state.lang);
     state.corpus = await fetchJSON("data/corpus.json").catch(()=>({lines:[]}));
     const ghostBase = await fetch("data/mostdipf_all.txt", { cache:"no-store" })
       .then(r => r.ok ? r.text() : "")
@@ -1403,20 +1625,12 @@
     else if(state.dayNo == null || !days.includes(state.dayNo)) state.dayNo = days[0];
 
     // Markov mix: corpus lines + canonical drama blocks + mostdipf ghost
-    const canon = getWorldById(state.canonId);
-    const dramaLines = [];
-    (canon?.days || []).forEach(d => (d.blocks||[]).slice(0, 2200).forEach(b => dramaLines.push(plainText(b))));
-
-    const ghost = state.ghostLines.slice(0, 3600);
-    const mix = (state.corpus.lines || []).slice(0, 3000)
-      .concat(dramaLines.slice(0, 2400))
-      .concat(ghost);
-    state.markov = buildMarkov(mix.length ? mix : dramaLines);
+    rebuildMarkov();
     state.speakerIndex = buildSpeakerIndex();
     state.keywordIndex = buildKeywordIndex();
 
     if(!state.buffer.length){
-      state.buffer = [{ text:`(entering Day ${getDay(w,state.dayNo)?.day || state.dayNo})`, hackled:false }];
+      state.buffer = [{ text:t("entering_day", { day: getDay(w,state.dayNo)?.day || state.dayNo }), hackled:false }];
       appendChunk({hackle:false});
     }
     state.vector = "FLOW";
@@ -1430,9 +1644,9 @@
   boot().catch(err => {
     console.error(err);
     applyRotation();
-    $("#state").textContent = "Boot failed.";
+    $("#state").textContent = t("boot_failed");
     $("#buffer").innerHTML = `<p class="line">${escapeHTML(err.message || String(err))}</p>`;
-    setQuestion("Boot failed. Missing JSON or wrong publishing root.");
-    setChoices([{ label:"Reload", onClick: () => { click(); location.reload(); } }]);
+    setQuestion(t("boot_failed_question"));
+    setChoices([{ label:t("reload"), onClick: () => { click(); location.reload(); } }]);
   });
 })();
