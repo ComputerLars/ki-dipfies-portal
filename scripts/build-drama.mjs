@@ -7,7 +7,10 @@ const DOCX_SOURCES = [
   { id: "mirror", name: "MIRROR TRANSCRIPT", file: "source/drama_versions/KI-DIPFIES Mega-Drama – Unified Composite Transcript.docx" },
   { id: "kopi", name: "KOPI VARIANT", file: "source/drama_versions/KI-DIPFIES_Kopi_minimally_fixed.docx" },
 ];
-const FUTURE_PATH = "/Users/au528457/Downloads/Gipfeltreffen 2027.docx";
+const FUTURE_SOURCES = [
+  { id: "future-2027", name: "FUTURE 2027", file: "source/futures/Gipfeltreffen 2027.docx" },
+  { id: "future-2050", name: "FUTURE 2050", file: "source/futures/Gipfeltreffen 2050.docx" },
+];
 const THEORY_PATH = "/Users/au528457/Downloads/Theory Tragedy_ Post-Farce Protocol (Mao-Dadaist Bureaucratic Edition).txt";
 
 const stripTags = (html) => html
@@ -114,11 +117,16 @@ async function main(){
     worlds.push({ id: src.id, name: src.name, days, stats: { days: days.length, blocks: count } });
   }
 
-  if(fs.existsSync(FUTURE_PATH)){
-    const blocks = await docxToBlocks(FUTURE_PATH);
+  for(const future of FUTURE_SOURCES){
+    const filePath = path.resolve(future.file);
+    if(!fs.existsSync(filePath)){
+      console.warn("Missing:", filePath);
+      continue;
+    }
+    const blocks = await docxToBlocks(filePath);
     const days = splitDays(blocks);
     const count = days.reduce((sum, d) => sum + d.blocks.length, 0);
-    worlds.push({ id: "future-2027", name: "FUTURE 2027", days, stats: { days: days.length, blocks: count } });
+    worlds.push({ id: future.id, name: future.name, days, stats: { days: days.length, blocks: count } });
   }
 
   if(fs.existsSync(THEORY_PATH)){

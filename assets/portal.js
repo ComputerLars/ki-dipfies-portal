@@ -34,6 +34,7 @@
     ghostLine:"",
     scrollMode:false,
     scrollSnapshot:null,
+    timeMenu:false,
     keywordIndex:null,
     vector:"BOOT",
     prevWorld:null,
@@ -44,7 +45,12 @@
   };
 
   const PRIMARY_WORLD_IDS = ["core","mirror","kopi"];
-  const FUTURE_WORLD_ID = "future-2027";
+  const FUTURE_WORLDS = [
+    { id:"future-2027", label:"2027", year:"2027" },
+    { id:"future-2050", label:"2050", year:"2050" },
+  ];
+  const isFutureWorld = (id) => FUTURE_WORLDS.some(f => f.id === id);
+  const futureMeta = (id) => FUTURE_WORLDS.find(f => f.id === id);
 
   const TOK_RE = /[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:['’][A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?|[.,!?;:()]/g;
   const safeText = (x) => (x ?? "").toString();
@@ -211,20 +217,28 @@
   function hasWorld(id){
     return playableWorlds().some(w => w.id === id);
   }
-  function timeJumpToFuture(){
-    const list = playableWorlds();
-    const future = list.find(w => w.id === FUTURE_WORLD_ID);
+  function availableFutures(){
+    return playableWorlds().filter(w => isFutureWorld(w.id));
+  }
+  function futureYear(id){
+    const meta = futureMeta(id);
+    if(meta?.year) return meta.year;
+    const m = (id || "").match(/\d{4}/);
+    return m ? m[0] : "future";
+  }
+  function timeJumpToFuture(targetId){
+    const future = getWorldById(targetId);
     if(!future) return false;
-    if(state.worldId !== FUTURE_WORLD_ID){
+    if(!isFutureWorld(state.worldId)){
       state.prevWorld = state.worldId;
       state.prevDay = state.dayNo;
       state.prevCursor = state.cursor;
     }
-    state.worldId = FUTURE_WORLD_ID;
+    state.worldId = future.id;
     const days = allDayNos(future);
     state.dayNo = days[0] || 1;
     state.cursor = 0;
-    state.buffer = [{ text:"(time jump: 2027)", hackled:false }];
+    state.buffer = [{ text:`(time jump: ${futureYear(future.id)})`, hackled:false }];
     state.chunkStack = [];
     state.scrollMode = false;
     state.scrollSnapshot = null;
@@ -232,7 +246,8 @@
     return true;
   }
   function returnFromFuture(){
-    if(state.worldId !== FUTURE_WORLD_ID) return false;
+    if(!isFutureWorld(state.worldId)) return false;
+    const fromYear = futureYear(state.worldId);
     const target = getWorldById(state.prevWorld || state.canonId);
     if(!target) return false;
     state.worldId = target.id;
@@ -240,7 +255,7 @@
     const day = (state.prevDay && days.includes(state.prevDay)) ? state.prevDay : (days[0] || 1);
     state.dayNo = day;
     state.cursor = state.prevCursor || 0;
-    state.buffer = [{ text:"(returning from 2027)", hackled:false }];
+    state.buffer = [{ text:`(returning from ${fromYear})`, hackled:false }];
     state.chunkStack = [];
     state.scrollMode = false;
     state.scrollSnapshot = null;
@@ -440,6 +455,7 @@
     const world = getWorldById(state.worldId);
     const day = getDay(world, state.dayNo);
     if(!world || !day) return;
+    state.timeMenu = false;
     if(!state.scrollMode){
       state.scrollSnapshot = {
         cursor: state.cursor,
@@ -540,6 +556,7 @@
   }
 
   function openRoleMenu(){
+    state.timeMenu = false;
     state.roleOptions = randomSpeakers(6);
     state.roleMenu = true;
   }
@@ -806,8 +823,9 @@
   function render(){
     const world = getWorldById(state.worldId);
     const day = getDay(world, state.dayNo);
-    const futureAvailable = hasWorld(FUTURE_WORLD_ID);
-    const inFuture = state.worldId === FUTURE_WORLD_ID;
+    const futures = availableFutures();
+    const futureAvailable = futures.length > 0;
+    const inFuture = isFutureWorld(state.worldId);
     applyRotation();
 
     setHUD(world, day);
@@ -823,10 +841,7 @@
         { label:"Role", onClick: () => act(() => openRoleMenu(), { echo:false, vector:"ROLE" }) },
       ];
       if(futureAvailable){
-        const jump = inFuture
-          ? { label:"Return 2026", onClick: () => act(() => returnFromFuture(), { echo:false, vector:"JUMP" }) }
-          : { label:"Time Jump", onClick: () => act(() => timeJumpToFuture(), { echo:false, vector:"JUMP" }) };
-        scrollChoices.push(jump);
+        scrollChoices.push({ label:"Time Jump", onClick: () => act(() => { state.timeMenu = true; }, { echo:false, vector:"JUMP" }) });
       }
       setChoices(scrollChoices);
       return;
@@ -845,6 +860,26 @@
       btns.push({
         label: "EXIT",
         onClick: () => act(() => { state.roleMenu = false; }, { echo:false, vector:"FLOW" }),
+      });
+      setChoices(btns);
+      return;
+    }
+
+    if(state.timeMenu){
+      setQuestion("TIME JUMP: SELECT YEAR.");
+      const btns = futures.map(f => ({
+        label: futureMeta(f.id)?.label || f.id.toUpperCase(),
+        onClick: () => act(() => { timeJumpToFuture(f.id); state.timeMenu = false; }, { echo:false, vector:"JUMP" }),
+      }));
+      if(inFuture){
+        btns.unshift({
+          label: "Return 2026",
+          onClick: () => act(() => { returnFromFuture(); state.timeMenu = false; }, { echo:false, vector:"JUMP" }),
+        });
+      }
+      btns.push({
+        label: "Exit",
+        onClick: () => act(() => { state.timeMenu = false; }, { echo:false, vector:"FLOW" }),
       });
       setChoices(btns);
       return;
@@ -888,10 +923,7 @@
         { label:"Hackle the return", onClick: () => act(() => { if(!rewindChunk()) gotoDay(-1); appendChunk({hackle:true}); }, { append:true, vector:"HACKLE" }) },
       ];
       if(futureAvailable){
-        const jump = inFuture
-          ? { label:"Return 2026", onClick: () => act(() => returnFromFuture(), { vector:"JUMP" }) }
-          : { label:"Time Jump", onClick: () => act(() => timeJumpToFuture(), { vector:"JUMP" }) };
-        endChoices.push(jump);
+        endChoices.push({ label:"Time Jump", onClick: () => act(() => { state.timeMenu = true; }, { vector:"JUMP" }) });
       }
       endChoices.push({ label:"Collect a Day", onClick: () => act(() => enterScrollMode(), { echo:false, vector:"SCROLL" }) });
       setChoices(endChoices);
@@ -907,10 +939,7 @@
       { label:"Wormhole", onClick: () => act(() => appendWormhole({ hackle:false }), { echo:false, vector:"WORMHOLE" }) },
     ];
     if(futureAvailable){
-      const jump = inFuture
-        ? { label:"Return 2026", onClick: () => act(() => returnFromFuture(), { vector:"JUMP" }) }
-        : { label:"Time Jump", onClick: () => act(() => timeJumpToFuture(), { vector:"JUMP" }) };
-      baseChoices.push(jump);
+      baseChoices.push({ label:"Time Jump", onClick: () => act(() => { state.timeMenu = true; }, { vector:"JUMP" }) });
     }
     baseChoices.push({ label:"Collect a Day", onClick: () => act(() => enterScrollMode(), { echo:false, vector:"SCROLL" }) });
     setChoices(baseChoices);
