@@ -198,7 +198,7 @@ async function main(){
     fs.writeFileSync(outPath, lines.join("\n"));
   }
 
-  const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 15);
+  const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
   const out = {
     version: stamp,
     canonical: "core",
@@ -220,8 +220,8 @@ async function main(){
   if(fs.existsSync(indexPath)){
     const html = fs.readFileSync(indexPath, "utf8");
     const updated = html
-      .replace(/portal\\.css\\?v=[^\"']+/g, `portal.css?v=${stamp}`)
-      .replace(/portal\\.js\\?v=[^\"']+/g, `portal.js?v=${stamp}`);
+      .replace(/portal\.css\?v=[^"']+/g, `portal.css?v=${stamp}`)
+      .replace(/portal\.js\?v=[^"']+/g, `portal.js?v=${stamp}`);
     if(updated !== html) fs.writeFileSync(indexPath, updated);
   }
   console.log("wrote", worlds.length, "worlds");

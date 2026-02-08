@@ -45,6 +45,12 @@
     mapMenu:false,
     mapSnapshot:null,
     keywordIndex:null,
+    visits:{},
+    erasSeen:[],
+    lastVisitKey:"",
+    anomalyMenu:false,
+    anomalySnapshot:null,
+    nextBreachAt:0,
     vector:"BOOT",
     prevWorld:null,
     prevDay:null,
@@ -102,6 +108,15 @@
       next_world: "Next World",
       prev_world: "Prev World",
       choose_vector: "CHOOSE A VECTOR.",
+      anomaly_header: "[CONVERGENCE BREACH]",
+      anomaly_detected: "MULTIVERSE COHERENCE BELOW THRESHOLD.",
+      anomaly_prompt: ">> STABILIZE OR FOLLOW FRACTURE?",
+      anomaly_question: "CONVERGENCE EVENT.",
+      stabilize: "Stabilize",
+      follow_fracture: "Follow Fracture",
+      ride_breach: "Ride the Breach",
+      stabilized_line: "(timeline stabilized)",
+      fracture_jump_line: ({ era, day }) => `(fracture jump: ERA ${era}, DAY ${day})`,
       time_jump_line: ({ era }) => `(time jump: ${era})`,
       return_line: ({ era }) => `(returning from ${era})`,
       cold_boot: "[COLD BOOT]",
@@ -158,6 +173,15 @@
       next_world: "Nächste Welt",
       prev_world: "Vorige Welt",
       choose_vector: "VEKTOR WÄHLEN.",
+      anomaly_header: "[KONVERGENZ-BRUCH]",
+      anomaly_detected: "MULTIVERSUM-KOHÄRENZ UNTER GRENZWERT.",
+      anomaly_prompt: ">> STABILISIEREN ODER BRUCH FOLGEN?",
+      anomaly_question: "KONVERGENZ-EREIGNIS.",
+      stabilize: "Stabilisieren",
+      follow_fracture: "Bruch folgen",
+      ride_breach: "Den Bruch reiten",
+      stabilized_line: "(Zeitlinie stabilisiert)",
+      fracture_jump_line: ({ era, day }) => `(Bruchsprung: ÄRA ${era}, TAG ${day})`,
       time_jump_line: ({ era }) => `(Zeitsprung: ${era})`,
       return_line: ({ era }) => `(zurück aus ${era})`,
       cold_boot: "[KALTSTART]",
@@ -175,12 +199,12 @@
     en: {
       FLOW:"FLOW", BACK:"BACK", NEXT:"NEXT", LOOP:"LOOP", ROLE:"ROLE",
       WORMHOLE:"WORMHOLE", HACKLE:"HACKLE", JUMP:"JUMP", MAP:"MAP",
-      SCROLL:"SCROLL", SHIFT:"SHIFT", GATE:"GATE", BOOT:"BOOT",
+      SCROLL:"SCROLL", SHIFT:"SHIFT", GATE:"GATE", BOOT:"BOOT", BREACH:"BREACH",
     },
     de: {
       FLOW:"FLUSS", BACK:"ZURUECK", NEXT:"VOR", LOOP:"SCHLEIFE", ROLE:"ROLLE",
       WORMHOLE:"WURMLOCH", HACKLE:"HACKLE", JUMP:"SPRUNG", MAP:"KARTE",
-      SCROLL:"SCROLL", SHIFT:"WECHSEL", GATE:"GATE", BOOT:"BOOT",
+      SCROLL:"SCROLL", SHIFT:"WECHSEL", GATE:"GATE", BOOT:"BOOT", BREACH:"BRUCH",
     },
   };
   const t = (key, vars) => {
@@ -255,7 +279,7 @@
     esc = esc.replace(/\+\+([\s\S]+?)\+\+/g, "<u>$1</u>");
     esc = esc.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>");
     esc = esc.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
-    esc = esc.replace(/(^|[^\\w])_([\\s\\S]+?)_(?=[^\\w]|$)/g, "$1<em>$2</em>");
+    esc = esc.replace(/(^|[^\w])_([^_\n]+)_(?=[^\w]|$)/g, "$1<em>$2</em>");
     return esc;
   };
 
@@ -412,6 +436,8 @@
     state.mapMenu = false;
     state.mapSnapshot = null;
     state.roleMenu = false;
+    state.anomalyMenu = false;
+    state.anomalySnapshot = null;
     state.scrollTopNext = true;
     state.speakerIndex = buildSpeakerIndex();
     state.keywordIndex = buildKeywordIndex();
@@ -420,6 +446,7 @@
       state.buffer = [{ text:t("entering_day", { day: getDay(w,state.dayNo)?.day || state.dayNo }), hackled:false }];
       appendChunk({hackle:false});
     }
+    markVisit(state.worldId, state.dayNo, 1);
     render();
     persist();
   }
@@ -474,6 +501,7 @@
     state.timeMenu = false;
     state.scrollTopNext = true;
     localStorage.setItem("ki_world", state.worldId || "");
+    markVisit(state.worldId, state.dayNo, 2);
     return true;
   }
   function erasForTimeMenu(){
@@ -506,6 +534,7 @@
     state.scrollMode = false;
     state.scrollSnapshot = null;
     state.scrollTopNext = true;
+    markVisit(state.worldId, state.dayNo, 2);
     return true;
   }
   function returnFromFuture(){
@@ -526,6 +555,7 @@
     state.prevWorld = null;
     state.prevDay = null;
     state.prevCursor = null;
+    markVisit(state.worldId, state.dayNo, 2);
     return true;
   }
   function cycleWorld(delta){
@@ -566,6 +596,204 @@
     if(!world) return null;
     const days = world.days || [];
     return days.find(d => d.day === dayNo) || days[0] || null;
+  }
+  function visitKey(worldId, dayNo){
+    return `${safeText(worldId)}::${Number(dayNo) || 1}`;
+  }
+  function markVisit(worldId = state.worldId, dayNo = state.dayNo, bump = 1){
+    if(!worldId) return;
+    if(!state.visits || typeof state.visits !== "object" || Array.isArray(state.visits)){
+      state.visits = {};
+    }
+    const key = visitKey(worldId, dayNo);
+    const n = Number(bump) || 1;
+    state.visits[key] = (state.visits[key] || 0) + Math.max(1, n);
+    state.lastVisitKey = key;
+    const era = worldEra(getWorldById(worldId));
+    if(era && !state.erasSeen.includes(era)){
+      state.erasSeen = state.erasSeen.concat(era).slice(-24);
+    }
+  }
+  function listWorldDayTargets(){
+    const out = [];
+    for(const world of playableWorlds()){
+      const era = worldEra(world) || PRESENT_ERA;
+      for(const dayNo of allDayNos(world)){
+        const key = visitKey(world.id, dayNo);
+        out.push({
+          worldId: world.id,
+          dayNo,
+          era,
+          visits: state.visits[key] || 0,
+        });
+      }
+    }
+    return out;
+  }
+  function pickLeastVisitedTarget({ excludeCurrent = true } = {}){
+    let targets = listWorldDayTargets();
+    if(excludeCurrent){
+      targets = targets.filter(t => !(t.worldId === state.worldId && t.dayNo === state.dayNo));
+    }
+    if(!targets.length) return null;
+    targets.sort((a,b) => a.visits - b.visits);
+    const floor = targets[0].visits;
+    const bucket = targets.filter(t => t.visits <= floor + 1);
+    return bucket[Math.floor(Math.random() * Math.min(bucket.length, 8))] || targets[0];
+  }
+  function randomLineFromWorld(world){
+    if(!world) return "";
+    const days = world.days || [];
+    if(!days.length) return "";
+    for(let k=0;k<10;k++){
+      const day = days[Math.floor(Math.random() * days.length)];
+      const pool = (day.blocks || []).filter(b => plainText(b).trim());
+      if(!pool.length) continue;
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
+    return "";
+  }
+  function sampleConvergenceLines(count = 4){
+    const current = getWorldById(state.worldId);
+    const currentEra = worldEra(current) || PRESENT_ERA;
+    const worlds = playableWorlds().slice();
+    if(!worlds.length) return [];
+    const foreign = worlds.filter(w => (worldEra(w) || PRESENT_ERA) !== currentEra);
+    const local = worlds.filter(w => (worldEra(w) || PRESENT_ERA) === currentEra && w.id !== state.worldId);
+    let pool = foreign.length ? foreign.concat(local) : worlds.filter(w => w.id !== state.worldId);
+    if(!pool.length) pool = worlds;
+    for(let i = pool.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    const lines = [];
+    for(let i=0;i<count;i++){
+      const src = pool[i % pool.length];
+      const line = randomLineFromWorld(src);
+      if(line) lines.push(line);
+    }
+    return lines;
+  }
+  function openAnomalyMenu(){
+    const lines = sampleConvergenceLines(4 + Math.floor(Math.random() * 3));
+    if(!lines.length) return false;
+    state.anomalySnapshot = {
+      worldId: state.worldId,
+      dayNo: state.dayNo,
+      cursor: state.cursor,
+      buffer: state.buffer.slice(),
+      chunkStack: state.chunkStack.slice(),
+      scrollMode: state.scrollMode,
+      scrollSnapshot: state.scrollSnapshot,
+    };
+    state.anomalyMenu = true;
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
+    state.timeMenu = false;
+    state.mapMenu = false;
+    state.roleMenu = false;
+    state.vector = "BREACH";
+    state.buffer = [
+      { text:t("anomaly_header"), hackled:false },
+      { text:t("anomaly_detected"), hackled:false },
+      ...lines.map(line => ({ text: line, hackled: Math.random() < 0.35 })),
+      { text:t("anomaly_prompt"), hackled:false },
+    ];
+    state.scrollTopNext = true;
+    maybeSprite("WORMHOLE");
+    return true;
+  }
+  function restoreFromAnomalySnapshot(){
+    const snap = state.anomalySnapshot;
+    if(!snap) return false;
+    state.worldId = snap.worldId;
+    state.dayNo = snap.dayNo;
+    state.cursor = snap.cursor;
+    state.buffer = snap.buffer.slice();
+    state.chunkStack = snap.chunkStack.slice();
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
+    state.timeMenu = false;
+    state.mapMenu = false;
+    state.roleMenu = false;
+    state.anomalySnapshot = null;
+    state.anomalyMenu = false;
+    state.scrollTopNext = true;
+    return true;
+  }
+  function stabilizeTimeline(){
+    if(!restoreFromAnomalySnapshot()){
+      state.anomalyMenu = false;
+      return;
+    }
+    state.buffer.push({ text:t("stabilized_line"), hackled:false });
+    state.drift = clamp01(state.drift * 0.80);
+    markVisit();
+  }
+  function followFracture(){
+    const target = pickLeastVisitedTarget({ excludeCurrent:true }) || pickLeastVisitedTarget({ excludeCurrent:false });
+    state.anomalyMenu = false;
+    state.anomalySnapshot = null;
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
+    state.timeMenu = false;
+    state.mapMenu = false;
+    state.roleMenu = false;
+    if(!target){
+      appendWormhole({ hackle:true });
+      return;
+    }
+    state.worldId = target.worldId;
+    state.dayNo = target.dayNo;
+    const world = getWorldById(state.worldId);
+    const day = getDay(world, state.dayNo);
+    const blocks = day?.blocks || [];
+    const maxStart = Math.max(0, blocks.length - 12);
+    state.cursor = Math.floor(Math.random() * (maxStart + 1));
+    state.chunkStack = [];
+    state.buffer = [{ text:t("fracture_jump_line", { era: target.era, day: state.dayNo }), hackled:false }];
+    appendChunk({ hackle: Math.random() < 0.55 });
+    state.drift = clamp01(state.drift + 0.12);
+    markVisit(state.worldId, state.dayNo, 2);
+  }
+  function rideBreach(){
+    if(Math.random() < 0.55){
+      followFracture();
+      return;
+    }
+    stabilizeTimeline();
+    appendWormhole({ hackle:true });
+    state.drift = clamp01(state.drift + 0.06);
+  }
+  function maybeTriggerConvergence(vector){
+    if(vector === "BREACH") return false;
+    if(state.anomalyMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
+    if(state.clicks < 3) return false;
+    if(eraGroups().size < 2) return false;
+    const now = Date.now();
+    if(now < state.nextBreachAt) return false;
+    const weights = {
+      FLOW:0.07,
+      HACKLE:0.14,
+      WORMHOLE:0.18,
+      SHIFT:0.12,
+      NEXT:0.10,
+      JUMP:0.11,
+      BACK:0.05,
+      ROLE:0.04,
+      MAP:0.03,
+      SCROLL:0.02,
+      LOOP:0.06,
+      GATE:0.08,
+    };
+    const base = weights[vector] ?? 0.05;
+    const p = Math.min(0.34, base + (state.drift * 0.18));
+    if(Math.random() >= p) return false;
+    const opened = openAnomalyMenu();
+    if(opened){
+      state.nextBreachAt = now + 45000 + Math.floor(Math.random() * 70000);
+    }
+    return opened;
   }
 
   function markovSeed(){
@@ -741,9 +969,12 @@
 
   function persist(){
     try{
+      const now = Date.now();
       localStorage.setItem("ki_portal_state", JSON.stringify({
         lang: state.lang, clicks: state.clicks, worldId: state.worldId, dayNo: state.dayNo, cursor: state.cursor,
         drift: state.drift, buffer: state.buffer.slice(-260),
+        visits: state.visits, erasSeen: state.erasSeen.slice(-24), lastVisitKey: state.lastVisitKey,
+        nextBreachIn: Math.max(0, (state.nextBreachAt || 0) - now),
       }));
     }catch{}
   }
@@ -759,6 +990,10 @@
       if(typeof o.cursor==="number") state.cursor=o.cursor;
       if(typeof o.drift==="number") state.drift=o.drift;
       if(Array.isArray(o.buffer) && !langMismatch) state.buffer=o.buffer;
+      if(o.visits && typeof o.visits === "object" && !Array.isArray(o.visits)) state.visits=o.visits;
+      if(Array.isArray(o.erasSeen)) state.erasSeen=o.erasSeen.filter(x => typeof x === "string").slice(-24);
+      if(typeof o.lastVisitKey==="string") state.lastVisitKey=o.lastVisitKey;
+      if(typeof o.nextBreachIn==="number") state.nextBreachAt = Date.now() + Math.max(0, o.nextBreachIn);
     }catch{}
   }
 
@@ -949,6 +1184,7 @@
     ];
     state.chunkStack.push({ cursorStart: state.cursor, cursorEnd: state.cursor, lines: state.buffer.slice(), hackle:false });
     state.scrollTopNext = true;
+    markVisit(state.worldId, state.dayNo, 2);
   }
 
   function randomSpeakers(count=6){
@@ -1087,6 +1323,7 @@
     }
     state.scrollTopNext = true;
     state.roleMenu = false;
+    markVisit(state.worldId, state.dayNo, 2);
   }
   function jumpToWorld(worldId){
     const w = getWorldById(worldId);
@@ -1105,6 +1342,7 @@
     state.roleMenu = false;
     state.scrollTopNext = true;
     localStorage.setItem("ki_world", state.worldId || "");
+    markVisit(state.worldId, state.dayNo, 2);
   }
 
   function ghostMaybe(){
@@ -1162,6 +1400,12 @@
     click();
     if(typeof fn === "function") fn();
     state.vector = vector;
+    if(maybeTriggerConvergence(vector)){
+      ghostMaybe();
+      render();
+      persist();
+      return;
+    }
     if(echo && !append && vector === "HACKLE") markovEcho();
     if(vector === "HACKLE") forceGhost();
     maybeSprite(vector);
@@ -1272,6 +1516,7 @@
     if(state.scrollMode) enterScrollMode();
     if(delta > 0) state.drift = clamp01(state.drift * 0.92);
     else state.drift = clamp01(state.drift + 0.08);
+    markVisit(state.worldId, state.dayNo, 1);
     coldBootMaybe("day5");
   }
   function shiftWorld(delta=+1){
@@ -1300,6 +1545,7 @@
     state.roleMenu = false;
     state.scrollTopNext = true;
     localStorage.setItem("ki_world", state.worldId || "");
+    markVisit(state.worldId, state.dayNo, 1);
     return true;
   }
 
@@ -1316,6 +1562,7 @@
       state.scrollTopNext = true;
       return;
     }
+    markVisit(world.id, day.day, 1);
     const blocks = day.blocks || [];
     if(state.cursor >= blocks.length){
       state.buffer.push({ text:t("end_day", { day: day.day }), hackled:false });
@@ -1420,6 +1667,16 @@
     renderBuffer();
     renderGhost();
 
+    if(state.anomalyMenu){
+      setQuestion(t("anomaly_question"));
+      setChoices([
+        { label:t("stabilize"), onClick: () => act(() => stabilizeTimeline(), { echo:false, vector:"BREACH" }) },
+        { label:t("follow_fracture"), onClick: () => act(() => followFracture(), { echo:false, vector:"BREACH" }) },
+        { label:t("ride_breach"), onClick: () => act(() => rideBreach(), { echo:false, vector:"BREACH" }) },
+      ]);
+      return;
+    }
+
     if(state.scrollMode){
       setQuestion(t("scroll_mode"));
       const scrollChoices = [
@@ -1492,6 +1749,7 @@
         state.buffer = [{ text:t("relinking_day", { day: state.dayNo }), hackled:false }];
         state.chunkStack = [];
         state.scrollTopNext = true;
+        markVisit(state.worldId, state.dayNo, 1);
         render();
         persist();
         return;
@@ -1627,6 +1885,7 @@
     const days = allDayNos(w);
     if(!days.length) state.dayNo = 1;
     else if(state.dayNo == null || !days.includes(state.dayNo)) state.dayNo = days[0];
+    markVisit(state.worldId, state.dayNo, 1);
 
     // Markov mix: corpus lines + canonical drama blocks + mostdipf ghost
     rebuildMarkov();
