@@ -58,6 +58,9 @@
     tribunalMenu:false,
     tribunalSnapshot:null,
     nextTribunalAt:0,
+    counterMenu:false,
+    counterSnapshot:null,
+    nextCounterAt:0,
     tribunalBias:0,
     tribunalBiasTurns:0,
     eventHeat:0,
@@ -143,6 +146,18 @@
       tribunal_affirm_line: "(coherence covenant accepted)",
       tribunal_refuse_line: "(coherence covenant refused)",
       tribunal_abstain_line: "(judgment deferred)",
+      counter_header: "[COUNTERFACTUAL REPLAY]",
+      counter_detected: "A WHAT-IF RUN IS AVAILABLE.",
+      counter_prompt: ">> PICK A REPLAY VECTOR.",
+      counter_question: "COUNTERFACTUAL EVENT.",
+      counter_local: "Replay Day",
+      counter_parallel: "Parallel World",
+      counter_cross_era: "Cross Era",
+      counter_hold: "Hold Line",
+      counter_local_line: "(counterfactual: same day rerun)",
+      counter_parallel_line: "(counterfactual: parallel branch)",
+      counter_cross_era_line: "(counterfactual: cross-era branch)",
+      counter_hold_line: "(counterfactual deferred)",
       fracture_jump_line: ({ era, day }) => `(fracture jump: ERA ${era}, DAY ${day})`,
       time_jump_line: ({ era }) => `(time jump: ${era})`,
       return_line: ({ era }) => `(returning from ${era})`,
@@ -224,6 +239,18 @@
       tribunal_affirm_line: "(Kohärenz-Pakt bestätigt)",
       tribunal_refuse_line: "(Kohärenz-Pakt verweigert)",
       tribunal_abstain_line: "(Urteil vertagt)",
+      counter_header: "[KONTRAFAKTISCHER REPLAY]",
+      counter_detected: "EIN WAS-WAERE-WENN-LAUF IST VERFUEGBAR.",
+      counter_prompt: ">> REPLAY-VEKTOR WAEHLEN.",
+      counter_question: "KONTRAFAKTISCHES EREIGNIS.",
+      counter_local: "Tag replayen",
+      counter_parallel: "Parallele Welt",
+      counter_cross_era: "Aerawechsel",
+      counter_hold: "Linie halten",
+      counter_local_line: "(kontrafaktisch: gleicher Tag erneut)",
+      counter_parallel_line: "(kontrafaktisch: paralleler Zweig)",
+      counter_cross_era_line: "(kontrafaktisch: aera-uebergreifend)",
+      counter_hold_line: "(kontrafaktisch vertagt)",
       fracture_jump_line: ({ era, day }) => `(Bruchsprung: ÄRA ${era}, TAG ${day})`,
       time_jump_line: ({ era }) => `(Zeitsprung: ${era})`,
       return_line: ({ era }) => `(zurück aus ${era})`,
@@ -243,13 +270,13 @@
       FLOW:"FLOW", BACK:"BACK", NEXT:"NEXT", LOOP:"LOOP", ROLE:"ROLE",
       WORMHOLE:"WORMHOLE", HACKLE:"HACKLE", JUMP:"JUMP", MAP:"MAP",
       SCROLL:"SCROLL", SHIFT:"SHIFT", GATE:"GATE", BOOT:"BOOT", BREACH:"BREACH",
-      TRIB:"TRIBUNAL",
+      TRIB:"TRIBUNAL", REPLAY:"REPLAY",
     },
     de: {
       FLOW:"FLUSS", BACK:"ZURUECK", NEXT:"VOR", LOOP:"SCHLEIFE", ROLE:"ROLLE",
       WORMHOLE:"WURMLOCH", HACKLE:"HACKLE", JUMP:"SPRUNG", MAP:"KARTE",
       SCROLL:"SCROLL", SHIFT:"WECHSEL", GATE:"GATE", BOOT:"BOOT", BREACH:"BRUCH",
-      TRIB:"TRIBUNAL",
+      TRIB:"TRIBUNAL", REPLAY:"REPLAY",
     },
   };
   const t = (key, vars) => {
@@ -485,6 +512,7 @@
     state.anomalySnapshot = null;
     clearAnomalyChain();
     clearTribunalState();
+    clearCounterState();
     state.scrollTopNext = true;
     state.speakerIndex = buildSpeakerIndex();
     state.keywordIndex = buildKeywordIndex();
@@ -581,6 +609,7 @@
     state.scrollMode = false;
     state.scrollSnapshot = null;
     clearTribunalState();
+    clearCounterState();
     state.scrollTopNext = true;
     markVisit(state.worldId, state.dayNo, 2);
     return true;
@@ -600,6 +629,7 @@
     state.scrollMode = false;
     state.scrollSnapshot = null;
     clearTribunalState();
+    clearCounterState();
     state.scrollTopNext = true;
     state.prevWorld = null;
     state.prevDay = null;
@@ -767,6 +797,7 @@
       scrollMode: state.scrollMode,
       scrollSnapshot: state.scrollSnapshot,
     };
+    clearCounterState();
     state.anomalyMenu = true;
     state.scrollMode = false;
     state.scrollSnapshot = null;
@@ -902,8 +933,8 @@
     advanceAnomaly("ride");
   }
   function maybeTriggerConvergence(vector){
-    if(vector === "BREACH" || vector === "TRIB") return false;
-    if(state.anomalyMenu || state.tribunalMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
+    if(vector === "BREACH" || vector === "TRIB" || vector === "REPLAY") return false;
+    if(state.anomalyMenu || state.tribunalMenu || state.counterMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
     if(state.clicks < 3) return false;
     if(eraGroups().size < 2) return false;
     const now = Date.now();
@@ -952,6 +983,7 @@
       scrollMode: state.scrollMode,
       scrollSnapshot: state.scrollSnapshot,
     };
+    clearCounterState();
     state.tribunalMenu = true;
     state.anomalyMenu = false;
     state.anomalySnapshot = null;
@@ -986,6 +1018,7 @@
     state.mapMenu = false;
     state.roleMenu = false;
     clearTribunalState();
+    clearCounterState();
     state.scrollTopNext = true;
     return true;
   }
@@ -1008,6 +1041,7 @@
     const restored = restoreFromTribunalSnapshot();
     if(!restored){
       clearTribunalState();
+      clearCounterState();
       return;
     }
     if(choice === "affirm"){
@@ -1031,8 +1065,8 @@
     markVisit(state.worldId, state.dayNo, 1);
   }
   function maybeTriggerTribunal(vector){
-    if(vector === "BREACH" || vector === "TRIB") return false;
-    if(state.anomalyMenu || state.tribunalMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
+    if(vector === "BREACH" || vector === "TRIB" || vector === "REPLAY") return false;
+    if(state.anomalyMenu || state.tribunalMenu || state.counterMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
     if(state.clicks < 5) return false;
     const lines = state.ghostLines || [];
     if(!lines.length) return false;
@@ -1061,6 +1095,183 @@
     if(opened){
       spendHeat(0.46);
       state.nextTribunalAt = now + 90000 + Math.floor(Math.random() * 140000);
+    }
+    return opened;
+  }
+  function clearCounterState(){
+    state.counterMenu = false;
+    state.counterSnapshot = null;
+  }
+  function openCounterMenu(){
+    const world = getWorldById(state.worldId);
+    const day = getDay(world, state.dayNo);
+    const pool = (day?.blocks || []).filter(b => plainText(b).trim());
+    const anchor = pool.length
+      ? pool[Math.floor(Math.random() * pool.length)]
+      : randomLineFromWorld(world);
+    if(!anchor) return false;
+    state.counterSnapshot = {
+      worldId: state.worldId,
+      dayNo: state.dayNo,
+      cursor: state.cursor,
+      buffer: state.buffer.slice(),
+      chunkStack: state.chunkStack.slice(),
+      scrollMode: state.scrollMode,
+      scrollSnapshot: state.scrollSnapshot,
+    };
+    state.counterMenu = true;
+    state.anomalyMenu = false;
+    state.anomalySnapshot = null;
+    clearAnomalyChain();
+    clearTribunalState();
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
+    state.timeMenu = false;
+    state.mapMenu = false;
+    state.roleMenu = false;
+    state.vector = "REPLAY";
+    state.buffer = [
+      { text:t("counter_header"), hackled:false },
+      { text:t("counter_detected"), hackled:false },
+      { text:anchor, hackled:false },
+      { text:t("counter_prompt"), hackled:false },
+    ];
+    state.scrollTopNext = true;
+    maybeSprite("KEYWORD");
+    return true;
+  }
+  function restoreFromCounterSnapshot(){
+    const snap = state.counterSnapshot;
+    if(!snap) return false;
+    state.worldId = snap.worldId;
+    state.dayNo = snap.dayNo;
+    state.cursor = snap.cursor;
+    state.buffer = snap.buffer.slice();
+    state.chunkStack = snap.chunkStack.slice();
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
+    state.timeMenu = false;
+    state.mapMenu = false;
+    state.roleMenu = false;
+    clearCounterState();
+    state.scrollTopNext = true;
+    return true;
+  }
+  function pickCounterTarget(mode){
+    const currentWorld = getWorldById(state.worldId);
+    const currentEra = worldEra(currentWorld) || PRESENT_ERA;
+    const targets = listWorldDayTargets();
+    if(!targets.length) return null;
+    const choose = (arr) => {
+      if(!arr.length) return null;
+      arr.sort((a,b) => a.visits - b.visits);
+      const floor = arr[0].visits;
+      const bucket = arr.filter(t => t.visits <= floor + 1);
+      return bucket[Math.floor(Math.random() * Math.min(bucket.length, 8))] || arr[0];
+    };
+    if(mode === "local"){
+      return { worldId: state.worldId, dayNo: state.dayNo, era: currentEra, visits: state.visits[visitKey(state.worldId, state.dayNo)] || 0 };
+    }
+    if(mode === "parallel"){
+      return choose(targets.filter(t => t.era === currentEra && t.worldId !== state.worldId));
+    }
+    if(mode === "cross"){
+      return choose(targets.filter(t => t.era !== currentEra));
+    }
+    return pickLeastVisitedTarget({ excludeCurrent:true }) || pickLeastVisitedTarget({ excludeCurrent:false });
+  }
+  function applyCounterResolution(mode){
+    const target = pickCounterTarget(mode);
+    if(!target) return false;
+    state.worldId = target.worldId;
+    const world = getWorldById(state.worldId);
+    const days = allDayNos(world);
+    if(!days.length) return false;
+    state.dayNo = days.includes(target.dayNo) ? target.dayNo : days[Math.floor(Math.random() * days.length)];
+    const day = getDay(world, state.dayNo);
+    const blocks = day?.blocks || [];
+    const maxStart = Math.max(0, blocks.length - 10);
+    state.cursor = Math.floor(Math.random() * (maxStart + 1));
+    state.chunkStack = [];
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
+    state.timeMenu = false;
+    state.mapMenu = false;
+    state.roleMenu = false;
+    const lineKey = (
+      mode === "cross" ? "counter_cross_era_line" :
+      mode === "parallel" ? "counter_parallel_line" :
+      "counter_local_line"
+    );
+    state.buffer = [
+      { text:t(lineKey), hackled:false },
+      { text:t("entering_day", { day: state.dayNo }), hackled:false },
+    ];
+    if(mode === "cross" && Math.random() < 0.33){
+      appendWormhole({ hackle:true, replace:false });
+    }
+    state.scrollTopNext = true;
+    state.drift = clamp01(state.drift + (mode === "cross" ? 0.11 : 0.05));
+    localStorage.setItem("ki_world", state.worldId || "");
+    markVisit(state.worldId, state.dayNo, 2);
+    return true;
+  }
+  function resolveCounter(choice){
+    const restored = restoreFromCounterSnapshot();
+    if(!restored){
+      clearCounterState();
+      return;
+    }
+    if(choice === "hold"){
+      state.buffer.push({ text:t("counter_hold_line"), hackled:false });
+      state.drift = clamp01(state.drift * 0.97);
+      markVisit(state.worldId, state.dayNo, 1);
+      return;
+    }
+    const mode = (
+      choice === "parallel" ? "parallel" :
+      choice === "cross" ? "cross" :
+      "local"
+    );
+    const ok = applyCounterResolution(mode);
+    if(!ok){
+      state.buffer.push({ text:t("counter_hold_line"), hackled:false });
+      markVisit(state.worldId, state.dayNo, 1);
+    }
+  }
+  function maybeTriggerCounter(vector){
+    if(vector === "BREACH" || vector === "TRIB" || vector === "REPLAY") return false;
+    if(state.anomalyMenu || state.tribunalMenu || state.counterMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
+    if(state.clicks < 6) return false;
+    const now = Date.now();
+    if(now < state.nextCounterAt) return false;
+    if(!canSpendHeat(0.40)) return false;
+    const world = getWorldById(state.worldId);
+    const day = getDay(world, state.dayNo);
+    const atEnd = !!day && state.cursor >= (day.blocks || []).length;
+    const weights = {
+      FLOW:0.03,
+      HACKLE:0.07,
+      WORMHOLE:0.08,
+      SHIFT:0.09,
+      NEXT:0.11,
+      JUMP:0.08,
+      BACK:0.05,
+      ROLE:0.02,
+      MAP:0.02,
+      SCROLL:0.01,
+      LOOP:0.08,
+      GATE:0.04,
+    };
+    const base = weights[vector] ?? 0.03;
+    const dayEndBonus = atEnd ? 0.07 : 0;
+    const driftBonus = Math.max(0, state.drift - 0.30) * 0.12;
+    const p = Math.min(0.26, base + dayEndBonus + driftBonus);
+    if(Math.random() >= p) return false;
+    const opened = openCounterMenu();
+    if(opened){
+      spendHeat(0.40);
+      state.nextCounterAt = now + 95000 + Math.floor(Math.random() * 150000);
     }
     return opened;
   }
@@ -1269,6 +1480,7 @@
         visits: state.visits, erasSeen: state.erasSeen.slice(-24), lastVisitKey: state.lastVisitKey,
         nextBreachIn: Math.max(0, (state.nextBreachAt || 0) - now),
         nextTribunalIn: Math.max(0, (state.nextTribunalAt || 0) - now),
+        nextCounterIn: Math.max(0, (state.nextCounterAt || 0) - now),
         tribunalBias: state.tribunalBias,
         tribunalBiasTurns: state.tribunalBiasTurns,
         eventHeat: state.eventHeat,
@@ -1292,6 +1504,7 @@
       if(typeof o.lastVisitKey==="string") state.lastVisitKey=o.lastVisitKey;
       if(typeof o.nextBreachIn==="number") state.nextBreachAt = Date.now() + Math.max(0, o.nextBreachIn);
       if(typeof o.nextTribunalIn==="number") state.nextTribunalAt = Date.now() + Math.max(0, o.nextTribunalIn);
+      if(typeof o.nextCounterIn==="number") state.nextCounterAt = Date.now() + Math.max(0, o.nextCounterIn);
       if(typeof o.tribunalBias==="number") state.tribunalBias = Math.max(-3, Math.min(3, o.tribunalBias));
       if(typeof o.tribunalBiasTurns==="number") state.tribunalBiasTurns = Math.max(0, Math.min(24, o.tribunalBiasTurns));
       if(typeof o.eventHeat==="number") state.eventHeat = Math.max(0, Math.min(2, o.eventHeat));
@@ -1400,6 +1613,7 @@
     state.timeMenu = false;
     state.mapMenu = false;
     clearTribunalState();
+    clearCounterState();
     if(!state.scrollMode){
       state.scrollSnapshot = {
         cursor: state.cursor,
@@ -1481,6 +1695,7 @@
     state.scrollMode = false;
     state.scrollSnapshot = null;
     clearTribunalState();
+    clearCounterState();
     state.buffer = [
       { text:t("gate_opens", { word }), hackled:false },
       { text: hit.line, hackled:false },
@@ -1505,6 +1720,7 @@
     state.timeMenu = false;
     state.mapMenu = false;
     clearTribunalState();
+    clearCounterState();
     state.roleOptions = randomSpeakers(6);
     state.roleMenu = true;
   }
@@ -1582,6 +1798,7 @@
     state.timeMenu = false;
     state.roleMenu = false;
     clearTribunalState();
+    clearCounterState();
     if(!state.mapMenu){
       state.mapSnapshot = {
         cursor: state.cursor,
@@ -1620,6 +1837,7 @@
     state.scrollMode = false;
     state.scrollSnapshot = null;
     clearTribunalState();
+    clearCounterState();
     state.buffer = [
       { text:t("corridor_opens", { name }), hackled:false },
       { text: hit.line, hackled:false },
@@ -1647,6 +1865,7 @@
     state.timeMenu = false;
     state.roleMenu = false;
     clearTribunalState();
+    clearCounterState();
     state.scrollTopNext = true;
     localStorage.setItem("ki_world", state.worldId || "");
     markVisit(state.worldId, state.dayNo, 2);
@@ -1716,6 +1935,12 @@
       return;
     }
     if(maybeTriggerTribunal(vector)){
+      ghostMaybe();
+      render();
+      persist();
+      return;
+    }
+    if(maybeTriggerCounter(vector)){
       ghostMaybe();
       render();
       persist();
@@ -1832,6 +2057,7 @@
     state.buffer = [{ text:t("entering_day", { day: state.dayNo }), hackled:false }];
     state.chunkStack = [];
     clearTribunalState();
+    clearCounterState();
     state.scrollTopNext = true;
     if(state.scrollMode) enterScrollMode();
     if(delta > 0) state.drift = clamp01(state.drift * 0.92);
@@ -1864,6 +2090,7 @@
     state.timeMenu = false;
     state.roleMenu = false;
     clearTribunalState();
+    clearCounterState();
     state.scrollTopNext = true;
     localStorage.setItem("ki_world", state.worldId || "");
     markVisit(state.worldId, state.dayNo, 1);
@@ -1980,6 +2207,7 @@
   function normalizeModeFlags(){
     if(state.anomalyMenu){
       state.tribunalMenu = false;
+      state.counterMenu = false;
       state.scrollMode = false;
       state.roleMenu = false;
       state.mapMenu = false;
@@ -1987,6 +2215,14 @@
       return;
     }
     if(state.tribunalMenu){
+      state.counterMenu = false;
+      state.scrollMode = false;
+      state.roleMenu = false;
+      state.mapMenu = false;
+      state.timeMenu = false;
+      return;
+    }
+    if(state.counterMenu){
       state.scrollMode = false;
       state.roleMenu = false;
       state.mapMenu = false;
@@ -1995,6 +2231,7 @@
     }
     if(state.scrollMode){
       state.tribunalMenu = false;
+      state.counterMenu = false;
       state.roleMenu = false;
       state.mapMenu = false;
       state.timeMenu = false;
@@ -2002,16 +2239,19 @@
     }
     if(state.roleMenu){
       state.tribunalMenu = false;
+      state.counterMenu = false;
       state.mapMenu = false;
       state.timeMenu = false;
       return;
     }
     if(state.mapMenu){
       state.tribunalMenu = false;
+      state.counterMenu = false;
       state.timeMenu = false;
       return;
     }
     state.tribunalMenu = false;
+    state.counterMenu = false;
   }
 
   function render(){
@@ -2043,6 +2283,16 @@
         { label:t("tribunal_affirm"), onClick: () => act(() => resolveTribunal("affirm"), { echo:false, vector:"TRIB" }) },
         { label:t("tribunal_refuse"), onClick: () => act(() => resolveTribunal("refuse"), { echo:false, vector:"TRIB" }) },
         { label:t("tribunal_abstain"), onClick: () => act(() => resolveTribunal("abstain"), { echo:false, vector:"TRIB" }) },
+      ]);
+      return;
+    }
+    if(state.counterMenu){
+      setQuestion(t("counter_question"));
+      setChoices([
+        { label:t("counter_local"), onClick: () => act(() => resolveCounter("local"), { echo:false, vector:"REPLAY" }) },
+        { label:t("counter_parallel"), onClick: () => act(() => resolveCounter("parallel"), { echo:false, vector:"REPLAY" }) },
+        { label:t("counter_cross_era"), onClick: () => act(() => resolveCounter("cross"), { echo:false, vector:"REPLAY" }) },
+        { label:t("counter_hold"), onClick: () => act(() => resolveCounter("hold"), { echo:false, vector:"REPLAY" }) },
       ]);
       return;
     }

@@ -147,16 +147,50 @@ const romanToInt = (s) => {
   return total || 1;
 };
 
+const DAY_WORDS = new Map([
+  ["one", 1], ["two", 2], ["three", 3], ["four", 4], ["five", 5],
+  ["six", 6], ["seven", 7], ["eight", 8], ["nine", 9], ["ten", 10],
+  ["first", 1], ["second", 2], ["third", 3], ["fourth", 4], ["fifth", 5],
+  ["sixth", 6], ["seventh", 7], ["eighth", 8], ["ninth", 9], ["tenth", 10],
+  ["eins", 1], ["zwei", 2], ["drei", 3], ["vier", 4], ["funf", 5],
+  ["sechs", 6], ["sieben", 7], ["acht", 8], ["neun", 9], ["zehn", 10],
+  ["erster", 1], ["erste", 1], ["zweiter", 2], ["zweite", 2], ["dritter", 3], ["dritte", 3],
+  ["vierter", 4], ["vierte", 4], ["funfter", 5], ["funfte", 5], ["sechster", 6], ["sechste", 6],
+  ["siebter", 7], ["siebte", 7], ["achter", 8], ["achte", 8], ["neunter", 9], ["neunte", 9],
+  ["zehnter", 10], ["zehnte", 10],
+]);
+const normalizeDayWord = (s) => (s || "")
+  .toLowerCase()
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .replace(/[.]/g, "")
+  .trim();
+const dayTokenToInt = (token) => {
+  if(!token) return null;
+  const cleaned = normalizeDayWord(token);
+  if(!cleaned) return null;
+  if(/^[0-9]+$/.test(cleaned)) return parseInt(cleaned, 10);
+  if(/^[ivxlcdm]+$/i.test(cleaned)) return romanToInt(cleaned);
+  return DAY_WORDS.get(cleaned) || null;
+};
+
 function splitDays(blocks){
   const days = new Map();
   let current = null;
-  const dayRe = /^\s*[-–—]*\s*Day\s+(\d+)\b/i;
   for(const block of blocks){
     const plain = stripTags(block);
-    const m = plain.match(dayRe);
-    if(m){
-      current = parseInt(m[1], 10);
+    const patterns = [
+      /^\s*[-–—]*\s*(?:Day|Tag)\s+([A-Za-zÀ-ÖØ-öø-ÿ0-9]+)\b/i,
+      /^\s*[-–—]*\s*([A-Za-zÀ-ÖØ-öø-ÿ]+)\s+Tag\b/i,
+    ];
+    for(const re of patterns){
+      const m = plain.match(re);
+      if(!m) continue;
+      const n = dayTokenToInt(m[1]);
+      if(!n) continue;
+      current = n;
       if(!days.has(current)) days.set(current, []);
+      break;
     }
     if(current == null){
       current = 1;
@@ -239,6 +273,44 @@ function harmonizeStyles(referenceWorlds, targetWorlds){
     }
   }
 }
+function alignDaySplits(referenceWorlds, targetWorlds){
+  const refMap = new Map(referenceWorlds.map(w => [w.id, w]));
+  for(const tw of targetWorlds){
+    const rw = refMap.get(tw.id);
+    if(!rw) continue;
+    const rDays = rw.days || [];
+    const tDays = tw.days || [];
+    if(rDays.length <= 1) continue;
+    if(tDays.length !== 1) continue;
+    const flat = (tDays[0]?.blocks || []).slice();
+    if(!flat.length) continue;
+    const refCounts = rDays.map(d => (d.blocks || []).length);
+    const refTotal = refCounts.reduce((sum, n) => sum + n, 0);
+    if(refTotal <= 0) continue;
+    const out = [];
+    let cursor = 0;
+    const total = flat.length;
+    for(let i = 0; i < refCounts.length; i++){
+      const remainingDays = refCounts.length - i - 1;
+      const remaining = total - cursor;
+      const ideal = Math.round((refCounts[i] / refTotal) * total);
+      let take = (i === refCounts.length - 1) ? remaining : Math.max(1, ideal);
+      const maxTake = remaining - remainingDays;
+      take = Math.max(1, Math.min(maxTake, take));
+      const dayNo = Number(rDays[i]?.day) || (i + 1);
+      out.push({ day: dayNo, blocks: flat.slice(cursor, cursor + take) });
+      cursor += take;
+    }
+    if(cursor < total && out.length){
+      out[out.length - 1].blocks.push(...flat.slice(cursor));
+    }
+    tw.days = out;
+    tw.stats = {
+      days: out.length,
+      blocks: total,
+    };
+  }
+}
 
 async function buildWorlds(sources){
   const worlds = [];
@@ -266,6 +338,7 @@ async function main(){
   };
   const worlds = await buildWorlds([...DOCX_SOURCES, ...PAST_SOURCES, ...FUTURE_SOURCES, ...THEORY_SOURCES]);
   const worldsDe = await buildWorlds([...DOCX_SOURCES_DE, ...PAST_SOURCES_DE, ...FUTURE_SOURCES_DE, ...THEORY_SOURCES_DE]);
+  alignDaySplits(worlds, worldsDe);
   harmonizeStyles(worlds, worldsDe);
   for(const sager of SAGER_SOURCES){
     const filePath = path.resolve(sager.file);
