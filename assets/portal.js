@@ -61,6 +61,13 @@
     counterMenu:false,
     counterSnapshot:null,
     nextCounterAt:0,
+    originMenu:false,
+    originSnapshot:null,
+    nextOriginAt:0,
+    actionCount:0,
+    originUnlocked:false,
+    originSpectacleSeen:false,
+    originFirstJumpDone:false,
     tribunalBias:0,
     tribunalBiasTurns:0,
     eventHeat:0,
@@ -77,6 +84,8 @@
 
   const PRIMARY_WORLD_IDS = ["core","mirror","kopi"];
   const PRESENT_ERA = "2026";
+  const ORIGIN_WORLD_IDS = ["origin-aleph"];
+  const ORIGIN_ERA = "א";
   const I18N = {
     en: {
       lang_label: "LANG",
@@ -158,6 +167,14 @@
       counter_parallel_line: "(counterfactual: parallel branch)",
       counter_cross_era_line: "(counterfactual: cross-era branch)",
       counter_hold_line: "(counterfactual deferred)",
+      origin_header: "[ALEPH ORIGIN BREACH]",
+      origin_detected: "GIPFESIS KEYSPACE HAS APPEARED.",
+      origin_prompt: ">> ENTER OR HOLD POSITION?",
+      origin_question: "ORIGIN REVEAL EVENT.",
+      enter_origin: "Enter א",
+      hold_origin: "Hold Position",
+      origin_hold_line: "(origin deferred)",
+      origin_enter_line: "(origin key accepted)",
       fracture_jump_line: ({ era, day }) => `(fracture jump: ERA ${era}, DAY ${day})`,
       time_jump_line: ({ era }) => `(time jump: ${era})`,
       return_line: ({ era }) => `(returning from ${era})`,
@@ -251,6 +268,14 @@
       counter_parallel_line: "(kontrafaktisch: paralleler Zweig)",
       counter_cross_era_line: "(kontrafaktisch: aera-uebergreifend)",
       counter_hold_line: "(kontrafaktisch vertagt)",
+      origin_header: "[ALEPH ORIGIN BRUCH]",
+      origin_detected: "GIPFESIS-SCHLUESSELRAUM IST ERSCHIENEN.",
+      origin_prompt: ">> EINTRETEN ODER POSITION HALTEN?",
+      origin_question: "ORIGIN-REVEAL-EREIGNIS.",
+      enter_origin: "In א gehen",
+      hold_origin: "Position halten",
+      origin_hold_line: "(origin vertagt)",
+      origin_enter_line: "(origin schluessel akzeptiert)",
       fracture_jump_line: ({ era, day }) => `(Bruchsprung: ÄRA ${era}, TAG ${day})`,
       time_jump_line: ({ era }) => `(Zeitsprung: ${era})`,
       return_line: ({ era }) => `(zurück aus ${era})`,
@@ -270,13 +295,13 @@
       FLOW:"FLOW", BACK:"BACK", NEXT:"NEXT", LOOP:"LOOP", ROLE:"ROLE",
       WORMHOLE:"WORMHOLE", HACKLE:"HACKLE", JUMP:"JUMP", MAP:"MAP",
       SCROLL:"SCROLL", SHIFT:"SHIFT", GATE:"GATE", BOOT:"BOOT", BREACH:"BREACH",
-      TRIB:"TRIBUNAL", REPLAY:"REPLAY",
+      TRIB:"TRIBUNAL", REPLAY:"REPLAY", ORIGIN:"ALEPH",
     },
     de: {
       FLOW:"FLUSS", BACK:"ZURUECK", NEXT:"VOR", LOOP:"SCHLEIFE", ROLE:"ROLLE",
       WORMHOLE:"WURMLOCH", HACKLE:"HACKLE", JUMP:"SPRUNG", MAP:"KARTE",
       SCROLL:"SCROLL", SHIFT:"WECHSEL", GATE:"GATE", BOOT:"BOOT", BREACH:"BRUCH",
-      TRIB:"TRIBUNAL", REPLAY:"REPLAY",
+      TRIB:"TRIBUNAL", REPLAY:"REPLAY", ORIGIN:"ALEPH",
     },
   };
   const t = (key, vars) => {
@@ -513,6 +538,7 @@
     clearAnomalyChain();
     clearTribunalState();
     clearCounterState();
+    clearOriginState();
     state.scrollTopNext = true;
     state.speakerIndex = buildSpeakerIndex();
     state.keywordIndex = buildKeywordIndex();
@@ -526,14 +552,23 @@
     persist();
   }
 
+  function isOriginWorldId(id){
+    return ORIGIN_WORLD_IDS.includes(id);
+  }
+  function hasOriginWorld(){
+    return (state.worlds?.worlds || []).some(w => isOriginWorldId(w.id) && (w.days || []).length);
+  }
   function playableWorlds(){
     const worlds = state.worlds?.worlds || [];
-    return worlds.filter(w => (w.days || []).length);
+    const live = worlds.filter(w => (w.days || []).length);
+    if(state.originUnlocked) return live;
+    const filtered = live.filter(w => !isOriginWorldId(w.id));
+    return filtered.length ? filtered : live;
   }
   function primaryWorlds(){
     const playable = playableWorlds();
     const pick = playable.filter(w => PRIMARY_WORLD_IDS.includes(w.id));
-    return pick.length ? pick : playable.filter(w => w.id !== "theory-tragedy");
+    return pick.length ? pick : playable.filter(w => w.id !== "theory-tragedy" && !isOriginWorldId(w.id));
   }
   function hasWorld(id){
     return playableWorlds().some(w => w.id === id);
@@ -555,6 +590,11 @@
       map.get(era).push(w);
     }
     return map;
+  }
+  function eraSortKey(era){
+    if(era === ORIGIN_ERA) return -10000;
+    if(/^\d{4}$/.test(era)) return Number(era);
+    return 100000;
   }
   function randomizeStart(era){
     const groups = eraGroups();
@@ -582,7 +622,12 @@
   function erasForTimeMenu(){
     const groups = eraGroups();
     const eras = Array.from(groups.keys()).filter(e => e !== PRESENT_ERA);
-    eras.sort();
+    eras.sort((a,b) => {
+      const da = eraSortKey(a);
+      const db = eraSortKey(b);
+      if(da !== db) return da - db;
+      return a.localeCompare(b);
+    });
     return eras.map(e => ({ era: e, worlds: groups.get(e) || [] }));
   }
   function pickEraWorld(era){
@@ -656,6 +701,10 @@
     const playable = playableWorlds();
     if(playable.length) return playable[0];
     return found || worlds[0] || null;
+  }
+  function getAnyWorldById(id){
+    const worlds = state.worlds?.worlds || [];
+    return worlds.find(w => w.id === id) || null;
   }
   function ensurePlayableWorld(){
     const playable = playableWorlds();
@@ -933,8 +982,8 @@
     advanceAnomaly("ride");
   }
   function maybeTriggerConvergence(vector){
-    if(vector === "BREACH" || vector === "TRIB" || vector === "REPLAY") return false;
-    if(state.anomalyMenu || state.tribunalMenu || state.counterMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
+    if(vector === "BREACH" || vector === "TRIB" || vector === "REPLAY" || vector === "ORIGIN") return false;
+    if(state.anomalyMenu || state.tribunalMenu || state.counterMenu || state.originMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
     if(state.clicks < 3) return false;
     if(eraGroups().size < 2) return false;
     const now = Date.now();
@@ -1065,8 +1114,8 @@
     markVisit(state.worldId, state.dayNo, 1);
   }
   function maybeTriggerTribunal(vector){
-    if(vector === "BREACH" || vector === "TRIB" || vector === "REPLAY") return false;
-    if(state.anomalyMenu || state.tribunalMenu || state.counterMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
+    if(vector === "BREACH" || vector === "TRIB" || vector === "REPLAY" || vector === "ORIGIN") return false;
+    if(state.anomalyMenu || state.tribunalMenu || state.counterMenu || state.originMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
     if(state.clicks < 5) return false;
     const lines = state.ghostLines || [];
     if(!lines.length) return false;
@@ -1240,8 +1289,8 @@
     }
   }
   function maybeTriggerCounter(vector){
-    if(vector === "BREACH" || vector === "TRIB" || vector === "REPLAY") return false;
-    if(state.anomalyMenu || state.tribunalMenu || state.counterMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
+    if(vector === "BREACH" || vector === "TRIB" || vector === "REPLAY" || vector === "ORIGIN") return false;
+    if(state.anomalyMenu || state.tribunalMenu || state.counterMenu || state.originMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
     if(state.clicks < 6) return false;
     const now = Date.now();
     if(now < state.nextCounterAt) return false;
@@ -1272,6 +1321,133 @@
     if(opened){
       spendHeat(0.40);
       state.nextCounterAt = now + 95000 + Math.floor(Math.random() * 150000);
+    }
+    return opened;
+  }
+  function clearOriginState(){
+    state.originMenu = false;
+    state.originSnapshot = null;
+  }
+  function triggerOriginSpectacle(){
+    if(state.originSpectacleSeen) return;
+    state.originSpectacleSeen = true;
+    document.body.classList.add("origin-breach");
+    setTimeout(() => document.body.classList.remove("origin-breach"), 1900);
+    // Burst three sprite waves on first Aleph reveal for a singular "system rupture" feel.
+    spawnSpriteCluster();
+    setTimeout(() => spawnSpriteCluster(), 140);
+    setTimeout(() => spawnSpriteCluster(), 320);
+  }
+  function openOriginMenu(){
+    const origin = getAnyWorldById(ORIGIN_WORLD_IDS[0]);
+    if(!origin || !isOriginWorldId(origin.id)) return false;
+    const sample = randomLineFromWorld(origin);
+    state.originSnapshot = {
+      worldId: state.worldId,
+      dayNo: state.dayNo,
+      cursor: state.cursor,
+      buffer: state.buffer.slice(),
+      chunkStack: state.chunkStack.slice(),
+      scrollMode: state.scrollMode,
+      scrollSnapshot: state.scrollSnapshot,
+    };
+    state.originMenu = true;
+    state.anomalyMenu = false;
+    state.anomalySnapshot = null;
+    clearAnomalyChain();
+    clearTribunalState();
+    clearCounterState();
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
+    state.timeMenu = false;
+    state.mapMenu = false;
+    state.roleMenu = false;
+    state.vector = "ORIGIN";
+    state.buffer = [
+      { text:t("origin_header"), hackled:false },
+      { text:t("origin_detected"), hackled:false },
+      { text: sample || t("origin_detected"), hackled:false },
+      { text:t("origin_prompt"), hackled:false },
+    ];
+    state.scrollTopNext = true;
+    triggerOriginSpectacle();
+    return true;
+  }
+  function restoreFromOriginSnapshot(){
+    const snap = state.originSnapshot;
+    if(!snap) return false;
+    state.worldId = snap.worldId;
+    state.dayNo = snap.dayNo;
+    state.cursor = snap.cursor;
+    state.buffer = snap.buffer.slice();
+    state.chunkStack = snap.chunkStack.slice();
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
+    state.timeMenu = false;
+    state.mapMenu = false;
+    state.roleMenu = false;
+    clearOriginState();
+    state.scrollTopNext = true;
+    return true;
+  }
+  function jumpToOriginWorld(){
+    const origin = getAnyWorldById(ORIGIN_WORLD_IDS[0]);
+    if(!origin || !isOriginWorldId(origin.id)) return false;
+    state.originUnlocked = true;
+    state.originFirstJumpDone = true;
+    const days = allDayNos(origin);
+    if(!days.length) return false;
+    state.worldId = origin.id;
+    state.dayNo = days[0];
+    state.cursor = 0;
+    state.chunkStack = [];
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
+    state.timeMenu = false;
+    state.mapMenu = false;
+    state.roleMenu = false;
+    state.buffer = [
+      { text:t("origin_enter_line"), hackled:false },
+      { text:t("entering_day", { day: state.dayNo }), hackled:false },
+    ];
+    state.scrollTopNext = true;
+    localStorage.setItem("ki_world", state.worldId || "");
+    markVisit(state.worldId, state.dayNo, 2);
+    return true;
+  }
+  function resolveOrigin(choice){
+    const restored = restoreFromOriginSnapshot();
+    if(!restored){
+      clearOriginState();
+      return;
+    }
+    state.originUnlocked = true;
+    if(choice === "enter"){
+      if(!jumpToOriginWorld()){
+        state.buffer.push({ text:t("origin_hold_line"), hackled:false });
+      }
+      return;
+    }
+    state.buffer.push({ text:t("origin_hold_line"), hackled:false });
+    markVisit(state.worldId, state.dayNo, 1);
+  }
+  function maybeTriggerOrigin(vector){
+    if(vector === "BREACH" || vector === "TRIB" || vector === "REPLAY" || vector === "ORIGIN") return false;
+    if(state.originUnlocked) return false;
+    if(!hasOriginWorld()) return false;
+    if(state.anomalyMenu || state.tribunalMenu || state.counterMenu || state.originMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
+    if(state.actionCount < 3) return false;
+    const now = Date.now();
+    if(now < state.nextOriginAt) return false;
+    if(!canSpendHeat(0.42)) return false;
+    const eligibleVectors = new Set(["WORMHOLE", "REPLAY", "SHIFT", "JUMP", "HACKLE"]);
+    const forced = state.actionCount >= 5;
+    const p = forced ? 1 : (eligibleVectors.has(vector) ? 0.24 : 0.08);
+    if(Math.random() >= p) return false;
+    const opened = openOriginMenu();
+    if(opened){
+      spendHeat(0.42);
+      state.nextOriginAt = now + 70000 + Math.floor(Math.random() * 120000);
     }
     return opened;
   }
@@ -1481,6 +1657,11 @@
         nextBreachIn: Math.max(0, (state.nextBreachAt || 0) - now),
         nextTribunalIn: Math.max(0, (state.nextTribunalAt || 0) - now),
         nextCounterIn: Math.max(0, (state.nextCounterAt || 0) - now),
+        nextOriginIn: Math.max(0, (state.nextOriginAt || 0) - now),
+        actionCount: state.actionCount,
+        originUnlocked: !!state.originUnlocked,
+        originSpectacleSeen: !!state.originSpectacleSeen,
+        originFirstJumpDone: !!state.originFirstJumpDone,
         tribunalBias: state.tribunalBias,
         tribunalBiasTurns: state.tribunalBiasTurns,
         eventHeat: state.eventHeat,
@@ -1505,6 +1686,11 @@
       if(typeof o.nextBreachIn==="number") state.nextBreachAt = Date.now() + Math.max(0, o.nextBreachIn);
       if(typeof o.nextTribunalIn==="number") state.nextTribunalAt = Date.now() + Math.max(0, o.nextTribunalIn);
       if(typeof o.nextCounterIn==="number") state.nextCounterAt = Date.now() + Math.max(0, o.nextCounterIn);
+      if(typeof o.nextOriginIn==="number") state.nextOriginAt = Date.now() + Math.max(0, o.nextOriginIn);
+      if(typeof o.actionCount==="number") state.actionCount = Math.max(0, Math.min(9999, o.actionCount));
+      if(typeof o.originUnlocked==="boolean") state.originUnlocked = o.originUnlocked;
+      if(typeof o.originSpectacleSeen==="boolean") state.originSpectacleSeen = o.originSpectacleSeen;
+      if(typeof o.originFirstJumpDone==="boolean") state.originFirstJumpDone = o.originFirstJumpDone;
       if(typeof o.tribunalBias==="number") state.tribunalBias = Math.max(-3, Math.min(3, o.tribunalBias));
       if(typeof o.tribunalBiasTurns==="number") state.tribunalBiasTurns = Math.max(0, Math.min(24, o.tribunalBiasTurns));
       if(typeof o.eventHeat==="number") state.eventHeat = Math.max(0, Math.min(2, o.eventHeat));
@@ -1567,7 +1753,7 @@
         if(looksHtml(raw) && c.spkEnd){
           const parts = splitHtmlAtPlainIndex(raw, c.spkEnd);
           const tail = parts[1] || "";
-          const needsSpace = tail && !/^(\\s|&nbsp;)/i.test(tail);
+          const needsSpace = tail && !/^(\s|&nbsp;)/i.test(tail);
           html.push(`<p class="${cls.join(" ")}"${delay}><span class="spk" data-spk="${escapeHTML(c.spk)}">${escapeHTML(c.spk)}:</span>${needsSpace ? " " : ""}${renderText(tail)}</p>`);
         } else {
           const space = c.txt ? " " : "";
@@ -1756,13 +1942,19 @@
   }
   function worldLabel(w, labelMap){
     if(!w) return t("unknown");
+    if(isOriginWorldId(w.id)) return "א";
     if(labelMap && labelMap.has(w.id)) return labelMap.get(w.id);
     if(w.id === "theory-tragedy") return t("theory_name");
     return (w.name || w.id || t("unknown")).toUpperCase();
   }
   function buildMapBuffer(){
     const groups = eraGroups();
-    const eras = Array.from(groups.keys()).sort();
+    const eras = Array.from(groups.keys()).sort((a,b) => {
+      const da = eraSortKey(a);
+      const db = eraSortKey(b);
+      if(da !== db) return da - db;
+      return a.localeCompare(b);
+    });
     const labelMap = buildEraLabelMap();
     const node = (w) => `<span class="map-node" data-world="${escapeHTML(w.id)}">${worldLabel(w, labelMap)}</span>`;
     const lines = [
@@ -1775,7 +1967,7 @@
       return lines;
     }
     const makeRow = (worlds) => worlds.map(w => node(w)).join("&nbsp;--&nbsp;");
-    const rootEra = eras.includes(PRESENT_ERA) ? PRESENT_ERA : eras[0];
+    const rootEra = eras.includes(ORIGIN_ERA) ? ORIGIN_ERA : (eras.includes(PRESENT_ERA) ? PRESENT_ERA : eras[0]);
     const futureEras = eras.filter(e => e !== rootEra);
     const rootWorlds = sortedEraWorlds(rootEra);
     lines.push({ text:`<span class="map-line">ERA ${rootEra}</span>`, hackled:false });
@@ -1924,6 +2116,7 @@
 
   function act(fn, { append=false, echo=true, vector="FLOW" } = {}){
     click();
+    state.actionCount += 1;
     tickPacing();
     tickTribunalBias();
     if(typeof fn === "function") fn();
@@ -1941,6 +2134,12 @@
       return;
     }
     if(maybeTriggerCounter(vector)){
+      ghostMaybe();
+      render();
+      persist();
+      return;
+    }
+    if(maybeTriggerOrigin(vector)){
       ghostMaybe();
       render();
       persist();
@@ -2205,7 +2404,18 @@
     return true;
   }
   function normalizeModeFlags(){
+    if(state.originMenu){
+      state.anomalyMenu = false;
+      state.tribunalMenu = false;
+      state.counterMenu = false;
+      state.scrollMode = false;
+      state.roleMenu = false;
+      state.mapMenu = false;
+      state.timeMenu = false;
+      return;
+    }
     if(state.anomalyMenu){
+      state.originMenu = false;
       state.tribunalMenu = false;
       state.counterMenu = false;
       state.scrollMode = false;
@@ -2215,6 +2425,7 @@
       return;
     }
     if(state.tribunalMenu){
+      state.originMenu = false;
       state.counterMenu = false;
       state.scrollMode = false;
       state.roleMenu = false;
@@ -2223,6 +2434,7 @@
       return;
     }
     if(state.counterMenu){
+      state.originMenu = false;
       state.scrollMode = false;
       state.roleMenu = false;
       state.mapMenu = false;
@@ -2230,6 +2442,7 @@
       return;
     }
     if(state.scrollMode){
+      state.originMenu = false;
       state.tribunalMenu = false;
       state.counterMenu = false;
       state.roleMenu = false;
@@ -2238,6 +2451,7 @@
       return;
     }
     if(state.roleMenu){
+      state.originMenu = false;
       state.tribunalMenu = false;
       state.counterMenu = false;
       state.mapMenu = false;
@@ -2245,11 +2459,13 @@
       return;
     }
     if(state.mapMenu){
+      state.originMenu = false;
       state.tribunalMenu = false;
       state.counterMenu = false;
       state.timeMenu = false;
       return;
     }
+    state.originMenu = false;
     state.tribunalMenu = false;
     state.counterMenu = false;
   }
@@ -2293,6 +2509,14 @@
         { label:t("counter_parallel"), onClick: () => act(() => resolveCounter("parallel"), { echo:false, vector:"REPLAY" }) },
         { label:t("counter_cross_era"), onClick: () => act(() => resolveCounter("cross"), { echo:false, vector:"REPLAY" }) },
         { label:t("counter_hold"), onClick: () => act(() => resolveCounter("hold"), { echo:false, vector:"REPLAY" }) },
+      ]);
+      return;
+    }
+    if(state.originMenu){
+      setQuestion(t("origin_question"));
+      setChoices([
+        { label:t("enter_origin"), onClick: () => act(() => resolveOrigin("enter"), { echo:false, vector:"ORIGIN" }) },
+        { label:t("hold_origin"), onClick: () => act(() => resolveOrigin("hold"), { echo:false, vector:"ORIGIN" }) },
       ]);
       return;
     }

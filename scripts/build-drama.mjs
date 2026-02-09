@@ -35,8 +35,14 @@ const PAST_SOURCES_DE = [
 const THEORY_SOURCES = [
   { id: "theory-tragedy", name: "THEORY TRAGEDY", file: "source/theory/Theory Tragedy - Readers Version.docx", era: "2025", mode: "act" },
 ];
+const ORIGIN_SOURCES = [
+  { id: "origin-aleph", name: "GIPFESIS / א", file: "source/origin/GIPFESIS I.docx", era: "א" },
+];
 const THEORY_SOURCES_DE = [
   { id: "theory-tragedy", name: "THEORIE TRAGÖDIE", file: "source/theory/Theory Tragedy - Readers Version.de.docx", era: "2025", mode: "act" },
+];
+const ORIGIN_SOURCES_DE = [
+  { id: "origin-aleph", name: "GIPFESIS / א", file: "source/de/origin/GIPFESIS I.de.docx", era: "א" },
 ];
 const SAGER_SOURCES = [
   { name: "SAGER", file: "source/sager/syntetische_sager.docx", out: "data/sager.txt" },
@@ -73,9 +79,13 @@ const isTranslatorNoise = (text) => {
 };
 const normalizeUnicodeQuotes = (s) => s
   .replace(/[“”„‟]/g, "\"")
-  .replace(/[‘’‚‛]/g, "'");
+  .replace(/[‘’‚‛]/g, "'")
+  .replace(/[：]/g, ":");
 const normalizeSpeakerSpacing = (s) =>
-  s.replace(/^([A-Za-zÀ-ÖØ-öø-ÿ][^:\n]{1,58}:)(?=\S)/, "$1 ");
+  s.replace(/^([^\d:\n][^:\n]{1,70}:)(?=\S)/, (full, label) => {
+    if(!/[A-Za-zÀ-ÖØ-öø-ÿÄÖÜäöüß]/.test(label)) return full;
+    return `${label} `;
+  });
 const canonicalizePlainLine = (line) => {
   let out = (line || "").replace(/\u00a0/g, " ");
   out = normalizeUnicodeQuotes(out);
@@ -83,11 +93,55 @@ const canonicalizePlainLine = (line) => {
   out = normalizeSpeakerSpacing(out);
   return out;
 };
+const splitHtmlAtPlainIndex = (html, idx) => {
+  const s = String(html || "");
+  let plainCount = 0;
+  let i = 0;
+  while(i < s.length){
+    const ch = s[i];
+    if(ch === "<"){
+      const close = s.indexOf(">", i);
+      if(close === -1) break;
+      i = close + 1;
+      continue;
+    }
+    if(ch === "&"){
+      const semi = s.indexOf(";", i);
+      if(semi !== -1){
+        plainCount += 1;
+        i = semi + 1;
+        if(plainCount >= idx) break;
+        continue;
+      }
+    }
+    plainCount += 1;
+    i += 1;
+    if(plainCount >= idx) break;
+  }
+  return [s.slice(0, i), s.slice(i)];
+};
+const ensureSpeakerGapInBlock = (html) => {
+  const plain = stripTags(html || "");
+  const m = plain.match(/^([^\d:\n][^:\n]{1,70}):(\S[\s\S]*)$/);
+  if(!m) return html;
+  if(!/[A-Za-zÀ-ÖØ-öø-ÿÄÖÜäöüß]/.test(m[1])) return html;
+  const idx = m[1].length + 1;
+  let [head, tail] = splitHtmlAtPlainIndex(html, idx);
+  if(!tail) return html;
+  const trailingClosers = tail.match(/^((?:<\/(?:strong|b|em|i|u|span)>\s*)+)/i);
+  if(trailingClosers){
+    head += trailingClosers[1];
+    tail = tail.slice(trailingClosers[1].length);
+  }
+  if(!tail || /^(?:\s|&nbsp;)/i.test(tail)) return `${head}${tail}`;
+  return `${head} ${tail}`;
+};
 const canonicalizeBlock = (html) => {
   let out = (html || "").replace(/\u00a0/g, " ");
   out = normalizeUnicodeQuotes(out);
   out = out.replace(/(<\/(?:strong|b|span)>)(?=[^\s<])/gi, "$1 ");
-  out = out.replace(/(^|>)(\s*[A-Za-zÀ-ÖØ-öø-ÿ][^:<]{1,58}:)(?=[^\s<])/g, "$1$2 ");
+  out = out.replace(/(^|>|<br\s*\/?>|\n)(\s*[^\d:<\n][^:<\n]{1,70}:)(?=[^\s<])/gi, "$1$2 ");
+  out = ensureSpeakerGapInBlock(out);
   out = out.replace(/[ \t]{2,}/g, " ");
   out = out.trim();
   return out;
@@ -225,7 +279,6 @@ function splitActs(blocks){
     .map(([day, blocks]) => ({ day, blocks }));
 }
 
-const STYLE_TAG_RE = /<(strong|b|em|i|u)\b/i;
 const leadingEnvelope = (html) => {
   let rest = (html || "").trim();
   const tags = [];
@@ -265,10 +318,18 @@ function harmonizeStyles(referenceWorlds, targetWorlds){
         const tb = tBlocks[bi];
         const rb = rBlocks[bi];
         if(!tb || !rb) continue;
-        if(STYLE_TAG_RE.test(tb)) continue;
         const envelope = leadingEnvelope(rb);
         if(!envelope.length) continue;
-        tBlocks[bi] = wrapWithEnvelope(tb, envelope);
+        const current = leadingEnvelope(tb);
+        if(current.length && current.join("|") === envelope.join("|")) continue;
+        let inner = (tb || "").trim();
+        for(const tag of current){
+          inner = inner
+            .replace(new RegExp(`^<${tag}\\b[^>]*>`, "i"), "")
+            .replace(new RegExp(`</${tag}>\\s*$`, "i"), "")
+            .trim();
+        }
+        tBlocks[bi] = wrapWithEnvelope(inner || tb, envelope);
       }
     }
   }
@@ -336,8 +397,8 @@ async function main(){
     const manifest = { files: files.map(f => `assets/dipfies/${f}`) };
     fs.writeFileSync("data/dipfies.json", JSON.stringify(manifest, null, 2));
   };
-  const worlds = await buildWorlds([...DOCX_SOURCES, ...PAST_SOURCES, ...FUTURE_SOURCES, ...THEORY_SOURCES]);
-  const worldsDe = await buildWorlds([...DOCX_SOURCES_DE, ...PAST_SOURCES_DE, ...FUTURE_SOURCES_DE, ...THEORY_SOURCES_DE]);
+  const worlds = await buildWorlds([...DOCX_SOURCES, ...PAST_SOURCES, ...FUTURE_SOURCES, ...THEORY_SOURCES, ...ORIGIN_SOURCES]);
+  const worldsDe = await buildWorlds([...DOCX_SOURCES_DE, ...PAST_SOURCES_DE, ...FUTURE_SOURCES_DE, ...THEORY_SOURCES_DE, ...ORIGIN_SOURCES_DE]);
   alignDaySplits(worlds, worldsDe);
   harmonizeStyles(worlds, worldsDe);
   for(const sager of SAGER_SOURCES){

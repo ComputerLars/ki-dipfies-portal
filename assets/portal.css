@@ -78,6 +78,16 @@ u{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:
 #crt{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:4}
 #scan{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:5}
 body.morph #term{transform:scale(0.997)}
+body.origin-breach #term{animation:originShake 180ms steps(2,end) 9;border-color:var(--white);box-shadow:inset 0 0 0 1px var(--white),inset 0 0 0 3px var(--black),inset 0 0 0 4px var(--white),0 0 24px var(--green)}
+body.origin-breach #buffer{animation:originFlash 220ms steps(2,end) 7}
+body.origin-breach #oracle,body.origin-breach #ghost,body.origin-breach #hud{border-color:var(--white)}
+body.origin-breach #brand,body.origin-breach #state,body.origin-breach #q,body.origin-breach #ghost-text{color:var(--white)}
+body.origin-breach #crt{opacity:.65;background:repeating-linear-gradient(to bottom,rgba(243,246,242,0.22) 0 1px,rgba(5,5,5,0) 1px 3px);animation:originNoise 120ms steps(2,end) 12}
+body.origin-breach #scan{opacity:.95;background:linear-gradient(to bottom,rgba(0,0,0,0) 0%,rgba(243,246,242,0.78) 48%,rgba(0,166,81,0.46) 52%,rgba(0,0,0,0) 100%);animation:originSweep 700ms linear 3}
+@keyframes originShake{0%{transform:translate(0,0)}25%{transform:translate(1px,-1px)}50%{transform:translate(-1px,1px)}75%{transform:translate(1px,1px)}100%{transform:translate(0,0)}}
+@keyframes originFlash{0%{filter:invert(0)}50%{filter:invert(1)}100%{filter:invert(0)}}
+@keyframes originNoise{0%{transform:translateY(0)}50%{transform:translateY(1px)}100%{transform:translateY(0)}}
+@keyframes originSweep{0%{transform:translateY(-120%)}100%{transform:translateY(120%)}}
 @media (max-width:720px){
   #choices{grid-template-columns:1fr}
   #hud-meta{max-width:55%}
