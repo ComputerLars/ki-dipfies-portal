@@ -97,6 +97,7 @@
   const AUTO_ORIGIN_REVEAL = true;
   const TRACE_STORE_KEY = "ki_trace_aggregate_v1";
   const MAX_TRACE_LOG = 1200;
+  const TRACE_DEFAULT_ENDPOINT = "https://computerlars/trace";
   const TRACE_ENDPOINT = (() => {
     try{
       const qp = new URLSearchParams(location.search || "").get("trace");
@@ -104,9 +105,10 @@
       const w = (typeof window !== "undefined" && typeof window.KI_TRACE_ENDPOINT === "string") ? window.KI_TRACE_ENDPOINT.trim() : "";
       if(w) return w;
       const ls = localStorage.getItem("ki_trace_endpoint");
-      return (ls || "").trim();
+      if((ls || "").trim()) return (ls || "").trim();
+      return TRACE_DEFAULT_ENDPOINT;
     }catch{
-      return "";
+      return TRACE_DEFAULT_ENDPOINT;
     }
   })();
   const I18N = {
@@ -136,19 +138,16 @@
       more_names: "MORE NAMES",
       exit: "Exit",
       map_question: "WORLD MAP: CLICK NODE OR EXIT.",
-      copy_seed_link: "Copy Seed Link",
-      download_session: "Download Session",
-      trace_affirm: "Mark: Affirm",
-      trace_contest: "Mark: Contest",
-      trace_unclear: "Mark: Unclear",
-      trace_refuse: "Mark: Refuse",
-      trace_logged: ({ label }) => `(trace logged: ${label})`,
-      session_link_copied: "(session seed link copied)",
-      session_link_failed: "(copy blocked, link logged in terminal)",
-      session_downloaded: "(session log downloaded)",
+      seed_capsule: "Seed Capsule",
+      stats_pulse: "Stats Pulse",
+      seed_capsule_done: "(seed capsule copied + downloaded)",
+      seed_capsule_partial: "(seed capsule downloaded; copy blocked)",
       session_link_line: ({ link }) => `(session link: ${link})`,
-      community_seen_line: ({ percent, choice }) => `(${percent}% were here before you; most chose ${choice})`,
+      community_seen_line: ({ percent, choice, total, count }) => `(${percent}% chose ${choice} (${count}/${total} traces in this corridor))`,
       community_ask_line: "what would you do?",
+      stats_context_line: ({ context, total, variants }) => `(stats: ${total} traces in ${context}; ${variants} vectors observed)`,
+      stats_top_line: ({ choice, percent, count }) => `(top vector: ${choice} :: ${percent}% (${count}) )`,
+      stats_global_line: ({ total, contexts }) => `(global local memory: ${total} traces across ${contexts} contexts)`,
       sager_idle: "SAGER CHANNEL IDLE // waiting for next contradiction",
       origin_key_locked_line: "ORIGIN KEYSPACE: SEALED (MAP ACCESS ONLY).",
       origin_key_open_line: "ORIGIN KEYSPACE: OPEN.",
@@ -254,19 +253,16 @@
       more_names: "MEHR NAMEN",
       exit: "Exit",
       map_question: "WELTENKARTE: KNOTEN KLICKEN ODER EXIT.",
-      copy_seed_link: "Seed-Link kopieren",
-      download_session: "Session laden",
-      trace_affirm: "Spur: Zustimmen",
-      trace_contest: "Spur: Widerspruch",
-      trace_unclear: "Spur: Unklar",
-      trace_refuse: "Spur: Ablehnen",
-      trace_logged: ({ label }) => `(Spur protokolliert: ${label})`,
-      session_link_copied: "(Session-Seed-Link kopiert)",
-      session_link_failed: "(Kopieren blockiert, Link im Terminal protokolliert)",
-      session_downloaded: "(Session-Log heruntergeladen)",
+      seed_capsule: "Seed-Kapsel",
+      stats_pulse: "Statistik-Puls",
+      seed_capsule_done: "(Seed-Kapsel kopiert + heruntergeladen)",
+      seed_capsule_partial: "(Seed-Kapsel heruntergeladen; Kopieren blockiert)",
       session_link_line: ({ link }) => `(Session-Link: ${link})`,
-      community_seen_line: ({ percent, choice }) => `(${percent}% waren vor dir hier; meistens gewählt: ${choice})`,
+      community_seen_line: ({ percent, choice, total, count }) => `(${percent}% wählten ${choice} (${count}/${total} Spuren in diesem Korridor))`,
       community_ask_line: "Was würdest du tun?",
+      stats_context_line: ({ context, total, variants }) => `(Statistik: ${total} Spuren in ${context}; ${variants} Vektoren beobachtet)`,
+      stats_top_line: ({ choice, percent, count }) => `(Top-Vektor: ${choice} :: ${percent}% (${count}) )`,
+      stats_global_line: ({ total, contexts }) => `(globale lokale Erinnerung: ${total} Spuren über ${contexts} Kontexte)`,
       sager_idle: "SAGER-KANAL IDLE // wartet auf den nächsten Widerspruch",
       origin_key_locked_line: "ORIGIN-SCHLUESSELRAUM: VERSIEGELT (NUR UEBER KARTE).",
       origin_key_open_line: "ORIGIN-SCHLUESSELRAUM: OFFEN.",
@@ -636,6 +632,30 @@
     const percent = Math.round((count / bucket.total) * 100);
     return { key, count, percent };
   }
+  function contextSummary(mode = activeMenuContext()){
+    const ctxKey = currentContextKey(mode);
+    const bucket = ensureContextBucket(ctxKey);
+    const top = dominantChoice(bucket);
+    return {
+      key: ctxKey,
+      bucket,
+      top,
+      total: bucket.total || 0,
+      variants: Object.keys(bucket.choices || {}).length,
+    };
+  }
+  function globalSummary(){
+    const contexts = state.community?.contexts || {};
+    let total = 0;
+    let count = 0;
+    for(const key of Object.keys(contexts)){
+      const bucket = contexts[key];
+      if(!bucket || typeof bucket !== "object") continue;
+      total += Number(bucket.total || 0);
+      count += 1;
+    }
+    return { total, contexts: count };
+  }
   function postTrace(event){
     if(!TRACE_ENDPOINT) return;
     const payload = JSON.stringify(event);
@@ -712,56 +732,70 @@
     const sig = `${ctxKey}::${bucket.total}`;
     if(state.lastCommunityHintSig === sig) return false;
     const choiceLabel = bucket.labels[top.key] || top.key;
-    state.buffer.push({ text:t("community_seen_line", { percent: top.percent, choice: choiceLabel }), hackled:false });
+    state.buffer.push({
+      text:t("community_seen_line", {
+        percent: top.percent,
+        choice: choiceLabel,
+        total: bucket.total,
+        count: top.count,
+      }),
+      hackled:false,
+    });
     state.buffer.push({ text:t("community_ask_line"), hackled:false });
     state.scrollTopNext = true;
     state.lastCommunityHintSig = sig;
     state.nextCommunityHintAt = now + 28000 + Math.floor(Math.random() * 28000);
     return true;
   }
-  function registerTraceMark(mark){
-    const mode = activeMenuContext();
-    const ctxKey = currentContextKey(mode);
-    const bucket = ensureContextBucket(ctxKey);
-    bucket.marks[mark] = (bucket.marks[mark] || 0) + 1;
-    writeCommunityStore();
-    if(mark === "affirm"){
-      state.drift = clamp01(state.drift * 0.985);
-    } else if(mark === "contest"){
-      state.drift = clamp01(state.drift + 0.03);
-      spendHeat(0.06);
-    } else if(mark === "refuse"){
-      state.drift = clamp01(state.drift + 0.015);
-    } else {
-      state.drift = clamp01(state.drift + 0.005);
+  function showStatsPulse(){
+    const ctx = contextSummary();
+    const global = globalSummary();
+    state.buffer.push({
+      text:t("stats_context_line", { context: ctx.key, total: ctx.total, variants: ctx.variants }),
+      hackled:false,
+    });
+    if(ctx.top){
+      state.buffer.push({
+        text:t("stats_top_line", {
+          choice: ctx.bucket.labels[ctx.top.key] || ctx.top.key,
+          percent: ctx.top.percent,
+          count: ctx.top.count,
+        }),
+        hackled:false,
+      });
     }
-    traceEvent("annotation", { context: ctxKey, mark });
-    state.buffer.push({ text:t("trace_logged", { label: t(`trace_${mark}`) }), hackled:false });
+    state.buffer.push({
+      text:t("stats_global_line", { total: global.total, contexts: global.contexts }),
+      hackled:false,
+    });
     state.scrollTopNext = true;
+    traceEvent("stats_pulse", {
+      context: ctx.key,
+      total: ctx.total,
+      top: ctx.top ? (ctx.bucket.labels[ctx.top.key] || ctx.top.key) : null,
+      globalTotal: global.total,
+    });
   }
-  function copySessionLink(){
+  function copySessionLinkAsync(){
     const link = sessionLink();
-    const finish = (copied) => {
-      state.buffer.push({ text: copied ? t("session_link_copied") : t("session_link_failed"), hackled:false });
-      state.buffer.push({ text:t("session_link_line", { link }), hackled:false });
-      state.scrollTopNext = true;
-      traceEvent("session_link", { copied, link });
-      render();
-      persist();
-    };
-    try{
-      if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(link).then(() => finish(true)).catch(() => finish(false));
-        return;
-      }
-    }catch{}
-    finish(false);
+    return new Promise((resolve) => {
+      const finish = (copied) => resolve({ copied, link });
+      try{
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(link).then(() => finish(true)).catch(() => finish(false));
+          return;
+        }
+      }catch{}
+      finish(false);
+    });
   }
-  function downloadSessionLog(){
+  function downloadSessionLog(linkOverride){
     const world = getWorldById(state.worldId);
+    const link = linkOverride || sessionLink();
     const payload = {
       exportedAt: new Date().toISOString(),
       seed: ensureSessionSeed(),
+      link,
       startedAt: state.sessionStartedAt ? new Date(state.sessionStartedAt).toISOString() : null,
       lang: state.lang,
       worldId: state.worldId,
@@ -781,9 +815,23 @@
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(href), 1200);
-    state.buffer.push({ text:t("session_downloaded"), hackled:false });
-    state.scrollTopNext = true;
     traceEvent("session_download", { size: payload.traceLog.length });
+    return payload;
+  }
+  function exportSeedCapsule(){
+    copySessionLinkAsync().then(({ copied, link }) => {
+      const payload = downloadSessionLog(link);
+      state.buffer.push({ text: copied ? t("seed_capsule_done") : t("seed_capsule_partial"), hackled:false });
+      state.buffer.push({ text:t("session_link_line", { link }), hackled:false });
+      state.scrollTopNext = true;
+      traceEvent("seed_capsule", {
+        copied,
+        link,
+        traceCount: payload.traceLog.length,
+      });
+      render();
+      persist();
+    });
   }
   function diegeticChoiceLabel(label, idx){
     const cmd = slug(label).replace(/\./g, ".") || `vector.${idx + 1}`;
@@ -2967,12 +3015,8 @@
     if(state.mapMenu){
       setQuestion(t("map_question"));
       const btns = [
-        { label:t("copy_seed_link"), onClick: () => act(() => copySessionLink(), { echo:false, vector:"TRACE" }) },
-        { label:t("download_session"), onClick: () => act(() => downloadSessionLog(), { echo:false, vector:"TRACE" }) },
-        { label:t("trace_affirm"), onClick: () => act(() => registerTraceMark("affirm"), { echo:false, vector:"TRACE" }) },
-        { label:t("trace_contest"), onClick: () => act(() => registerTraceMark("contest"), { echo:false, vector:"TRACE" }) },
-        { label:t("trace_unclear"), onClick: () => act(() => registerTraceMark("unclear"), { echo:false, vector:"TRACE" }) },
-        { label:t("trace_refuse"), onClick: () => act(() => registerTraceMark("refuse"), { echo:false, vector:"TRACE" }) },
+        { label:t("seed_capsule"), onClick: () => act(() => exportSeedCapsule(), { echo:false, vector:"TRACE" }) },
+        { label:t("stats_pulse"), onClick: () => act(() => showStatsPulse(), { echo:false, vector:"TRACE" }) },
         { label:t("exit"), onClick: () => act(() => exitMapMenu(), { echo:false, vector:"FLOW" }) },
       ];
       setChoices(btns);
