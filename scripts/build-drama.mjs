@@ -49,7 +49,8 @@ const stripTags = (html) => html
   .replace(/&lt;/g, "<")
   .replace(/&gt;/g, ">")
   .replace(/&quot;/g, "\"")
-  .replace(/&#39;/g, "'")
+  .replace(/&#8220;|&#8221;|&#34;/g, "\"")
+  .replace(/&#8216;|&#8217;|&#39;/g, "'")
   .trim();
 const TRANSLATOR_NOISE = [
   /onlinedoctranslator/i,
@@ -62,6 +63,27 @@ const isTranslatorNoise = (text) => {
   if(!text) return false;
   return TRANSLATOR_NOISE.some(re => re.test(text));
 };
+const normalizeUnicodeQuotes = (s) => s
+  .replace(/[“”„‟]/g, "\"")
+  .replace(/[‘’‚‛]/g, "'");
+const normalizeSpeakerSpacing = (s) =>
+  s.replace(/^([A-Za-zÀ-ÖØ-öø-ÿ][^:\n]{1,58}:)(?=\S)/, "$1 ");
+const canonicalizePlainLine = (line) => {
+  let out = (line || "").replace(/\u00a0/g, " ");
+  out = normalizeUnicodeQuotes(out);
+  out = out.replace(/[ \t]+/g, " ").trim();
+  out = normalizeSpeakerSpacing(out);
+  return out;
+};
+const canonicalizeBlock = (html) => {
+  let out = (html || "").replace(/\u00a0/g, " ");
+  out = normalizeUnicodeQuotes(out);
+  out = out.replace(/(<\/(?:strong|b|span)>)(?=[^\s<])/gi, "$1 ");
+  out = out.replace(/(^|>)(\s*[A-Za-zÀ-ÖØ-öø-ÿ][^:<]{1,58}:)(?=[^\s<])/g, "$1$2 ");
+  out = out.replace(/[ \t]{2,}/g, " ");
+  out = out.trim();
+  return out;
+};
 
 function extractBlocks(html){
   if(!html) return [];
@@ -71,7 +93,7 @@ function extractBlocks(html){
   const rx = /<(p|h[1-6])\b[^>]*>([\s\S]*?)<\/\1>/gi;
   let m;
   while((m = rx.exec(normalized))){
-    const inner = (m[2] || "").trim();
+    const inner = canonicalizeBlock((m[2] || "").trim());
     if(inner) blocks.push(inner);
   }
   if(blocks.length){
@@ -98,8 +120,8 @@ async function docxToLines(file){
     const plain = stripTags(block);
     if(!plain) continue;
     plain.split(/\r?\n/).forEach(line => {
-      const trimmed = line.trim();
-      if(trimmed) lines.push(trimmed);
+      const cleaned = canonicalizePlainLine(line);
+      if(cleaned && !isTranslatorNoise(cleaned)) lines.push(cleaned);
     });
   }
   return lines;

@@ -51,6 +51,12 @@
     anomalyMenu:false,
     anomalySnapshot:null,
     nextBreachAt:0,
+    anomalyDepth:0,
+    anomalyStep:0,
+    anomalyCoherence:0,
+    anomalyTrail:[],
+    eventHeat:0,
+    paceTickAt:0,
     vector:"BOOT",
     prevWorld:null,
     prevDay:null,
@@ -111,11 +117,17 @@
       anomaly_header: "[CONVERGENCE BREACH]",
       anomaly_detected: "MULTIVERSE COHERENCE BELOW THRESHOLD.",
       anomaly_prompt: ">> STABILIZE OR FOLLOW FRACTURE?",
+      anomaly_prompt_final: ">> RESOLVE BREACH.",
       anomaly_question: "CONVERGENCE EVENT.",
+      anomaly_stage: ({ step, total }) => `[BREACH ${step}/${total}]`,
+      anomaly_trace: ({ trace }) => `(trace ${trace})`,
       stabilize: "Stabilize",
       follow_fracture: "Follow Fracture",
       ride_breach: "Ride the Breach",
       stabilized_line: "(timeline stabilized)",
+      anomaly_resolved_stable: "(breach stabilized)",
+      anomaly_resolved_fracture: "(fracture selected)",
+      anomaly_resolved_spill: "(spillover retained)",
       fracture_jump_line: ({ era, day }) => `(fracture jump: ERA ${era}, DAY ${day})`,
       time_jump_line: ({ era }) => `(time jump: ${era})`,
       return_line: ({ era }) => `(returning from ${era})`,
@@ -176,11 +188,17 @@
       anomaly_header: "[KONVERGENZ-BRUCH]",
       anomaly_detected: "MULTIVERSUM-KOHÄRENZ UNTER GRENZWERT.",
       anomaly_prompt: ">> STABILISIEREN ODER BRUCH FOLGEN?",
+      anomaly_prompt_final: ">> BRUCH AUFLÖSEN.",
       anomaly_question: "KONVERGENZ-EREIGNIS.",
+      anomaly_stage: ({ step, total }) => `[BRUCH ${step}/${total}]`,
+      anomaly_trace: ({ trace }) => `(Spur ${trace})`,
       stabilize: "Stabilisieren",
       follow_fracture: "Bruch folgen",
       ride_breach: "Den Bruch reiten",
       stabilized_line: "(Zeitlinie stabilisiert)",
+      anomaly_resolved_stable: "(Bruch stabilisiert)",
+      anomaly_resolved_fracture: "(Bruchroute gewählt)",
+      anomaly_resolved_spill: "(Überlauf bleibt)",
       fracture_jump_line: ({ era, day }) => `(Bruchsprung: ÄRA ${era}, TAG ${day})`,
       time_jump_line: ({ era }) => `(Zeitsprung: ${era})`,
       return_line: ({ era }) => `(zurück aus ${era})`,
@@ -674,8 +692,40 @@
     }
     return lines;
   }
-  function openAnomalyMenu(){
+  function rollCascadeDepth(){
+    let depth = 2;
+    if(Math.random() < 0.48) depth += 1;
+    if(Math.random() < 0.18) depth += 1;
+    return Math.min(4, depth);
+  }
+  function clearAnomalyChain(){
+    state.anomalyDepth = 0;
+    state.anomalyStep = 0;
+    state.anomalyCoherence = 0;
+    state.anomalyTrail = [];
+  }
+  function trailSymbol(choice){
+    if(choice === "stabilize") return "S";
+    if(choice === "fracture") return "F";
+    return "R";
+  }
+  function buildAnomalyBuffer(){
+    const step = Math.max(1, state.anomalyStep || 1);
+    const total = Math.max(step, state.anomalyDepth || step);
     const lines = sampleConvergenceLines(4 + Math.floor(Math.random() * 3));
+    const trace = (state.anomalyTrail || []).join("-");
+    const out = [
+      { text:t("anomaly_header"), hackled:false },
+      { text:t("anomaly_stage", { step, total }), hackled:false },
+      { text:t("anomaly_detected"), hackled:false },
+    ];
+    if(trace) out.push({ text:t("anomaly_trace", { trace }), hackled:false });
+    out.push(...lines.map(line => ({ text: line, hackled: Math.random() < 0.35 })));
+    out.push({ text:(step >= total ? t("anomaly_prompt_final") : t("anomaly_prompt")), hackled:false });
+    return out;
+  }
+  function openAnomalyMenu(){
+    const lines = sampleConvergenceLines(4);
     if(!lines.length) return false;
     state.anomalySnapshot = {
       worldId: state.worldId,
@@ -693,12 +743,11 @@
     state.mapMenu = false;
     state.roleMenu = false;
     state.vector = "BREACH";
-    state.buffer = [
-      { text:t("anomaly_header"), hackled:false },
-      { text:t("anomaly_detected"), hackled:false },
-      ...lines.map(line => ({ text: line, hackled: Math.random() < 0.35 })),
-      { text:t("anomaly_prompt"), hackled:false },
-    ];
+    state.anomalyDepth = rollCascadeDepth();
+    state.anomalyStep = 1;
+    state.anomalyCoherence = 0;
+    state.anomalyTrail = [];
+    state.buffer = buildAnomalyBuffer();
     state.scrollTopNext = true;
     maybeSprite("WORMHOLE");
     return true;
@@ -718,22 +767,26 @@
     state.roleMenu = false;
     state.anomalySnapshot = null;
     state.anomalyMenu = false;
+    clearAnomalyChain();
     state.scrollTopNext = true;
     return true;
   }
-  function stabilizeTimeline(){
+  function applyStabilizeResolution(){
     if(!restoreFromAnomalySnapshot()){
       state.anomalyMenu = false;
+      clearAnomalyChain();
       return;
     }
+    state.buffer.push({ text:t("anomaly_resolved_stable"), hackled:false });
     state.buffer.push({ text:t("stabilized_line"), hackled:false });
-    state.drift = clamp01(state.drift * 0.80);
+    state.drift = clamp01(state.drift * 0.72);
     markVisit();
   }
-  function followFracture(){
+  function applyFractureResolution(){
     const target = pickLeastVisitedTarget({ excludeCurrent:true }) || pickLeastVisitedTarget({ excludeCurrent:false });
     state.anomalyMenu = false;
     state.anomalySnapshot = null;
+    clearAnomalyChain();
     state.scrollMode = false;
     state.scrollSnapshot = null;
     state.timeMenu = false;
@@ -751,19 +804,71 @@
     const maxStart = Math.max(0, blocks.length - 12);
     state.cursor = Math.floor(Math.random() * (maxStart + 1));
     state.chunkStack = [];
-    state.buffer = [{ text:t("fracture_jump_line", { era: target.era, day: state.dayNo }), hackled:false }];
+    state.buffer = [
+      { text:t("anomaly_resolved_fracture"), hackled:false },
+      { text:t("fracture_jump_line", { era: target.era, day: state.dayNo }), hackled:false },
+    ];
     appendChunk({ hackle: Math.random() < 0.55 });
     state.drift = clamp01(state.drift + 0.12);
     markVisit(state.worldId, state.dayNo, 2);
   }
-  function rideBreach(){
-    if(Math.random() < 0.55){
-      followFracture();
+  function applySpillResolution(){
+    const restored = restoreFromAnomalySnapshot();
+    if(!restored){
+      state.anomalyMenu = false;
+      clearAnomalyChain();
+      appendWormhole({ hackle:true, replace:false });
       return;
     }
-    stabilizeTimeline();
-    appendWormhole({ hackle:true });
-    state.drift = clamp01(state.drift + 0.06);
+    state.buffer.push({ text:t("anomaly_resolved_spill"), hackled:false });
+    appendWormhole({ hackle:true, replace:false });
+    state.drift = clamp01(state.drift + 0.08);
+    markVisit(state.worldId, state.dayNo, 1);
+  }
+  function advanceAnomaly(choice){
+    if(!state.anomalyMenu){
+      if(choice === "stabilize") applyStabilizeResolution();
+      else if(choice === "fracture") applyFractureResolution();
+      else applySpillResolution();
+      return;
+    }
+    state.anomalyCoherence += (
+      choice === "stabilize" ? 1 :
+      choice === "fracture" ? -1 :
+      (Math.random() < 0.5 ? 1 : -1)
+    );
+    state.anomalyTrail.push(trailSymbol(choice));
+    const finalStep = state.anomalyStep >= state.anomalyDepth;
+    if(!finalStep){
+      state.anomalyStep += 1;
+      state.buffer = buildAnomalyBuffer();
+      state.scrollTopNext = true;
+      state.drift = clamp01(state.drift + (choice === "fracture" ? 0.06 : 0.03));
+      maybeSprite("WORMHOLE");
+      return;
+    }
+    if(state.anomalyCoherence >= 2){
+      applyStabilizeResolution();
+      return;
+    }
+    if(state.anomalyCoherence <= -1){
+      applyFractureResolution();
+      return;
+    }
+    if(choice === "fracture" && Math.random() < 0.45){
+      applyFractureResolution();
+      return;
+    }
+    applySpillResolution();
+  }
+  function stabilizeTimeline(){
+    advanceAnomaly("stabilize");
+  }
+  function followFracture(){
+    advanceAnomaly("fracture");
+  }
+  function rideBreach(){
+    advanceAnomaly("ride");
   }
   function maybeTriggerConvergence(vector){
     if(vector === "BREACH") return false;
@@ -772,6 +877,7 @@
     if(eraGroups().size < 2) return false;
     const now = Date.now();
     if(now < state.nextBreachAt) return false;
+    if(!canSpendHeat(0.56)) return false;
     const weights = {
       FLOW:0.07,
       HACKLE:0.14,
@@ -791,6 +897,7 @@
     if(Math.random() >= p) return false;
     const opened = openAnomalyMenu();
     if(opened){
+      spendHeat(0.56);
       state.nextBreachAt = now + 45000 + Math.floor(Math.random() * 70000);
     }
     return opened;
@@ -834,9 +941,12 @@
     if(!list.length) return;
     const now = Date.now();
     if(now < state.spriteCooldown) return;
+    if(!canSpendHeat(0.16)) return;
     const p = SPRITE_PROB[reason] ?? 0.12;
     if(Math.random() > p) return;
-    spawnSpriteCluster();
+    const spawned = spawnSpriteCluster();
+    if(!spawned) return;
+    spendHeat(0.10 + Math.min(0.45, spawned / 70));
     state.spriteCooldown = now + 1100;
   }
   function pickClusterCount(maxCount){
@@ -855,9 +965,9 @@
   }
   function spawnSpriteCluster(){
     const list = state.spriteList || [];
-    if(!list.length) return;
+    if(!list.length) return 0;
     const host = $("#sprites");
-    if(!host) return;
+    if(!host) return 0;
     let total = pickClusterCount(list.length);
     if(total > 24){
       while(host.firstChild) host.removeChild(host.firstChild);
@@ -881,7 +991,7 @@
       pool = list.filter(src => !used.has(src));
     }
     total = Math.min(total, pool.length);
-    if(total <= 0) return;
+    if(total <= 0) return 0;
     const chosen = pickUnique(pool, total);
     state.spriteHistory = [...recentSets, new Set(chosen)].slice(-SPRITE_HISTORY_DEPTH);
     const waves = [];
@@ -931,6 +1041,7 @@
       }, delay);
       delay += 140;
     }
+    return chosen.length;
   }
   function spriteTick(){
     if(state.clicks < 2) return;
@@ -938,7 +1049,12 @@
     const now = Date.now();
     if(!state.nextSpriteAt) state.nextSpriteAt = now + 20000 + Math.random() * 25000;
     if(now < state.nextSpriteAt) return;
-    spawnSpriteCluster();
+    if(!canSpendHeat(0.22)){
+      state.nextSpriteAt = now + 12000 + Math.random() * 22000;
+      return;
+    }
+    const spawned = spawnSpriteCluster();
+    if(spawned) spendHeat(0.14 + Math.min(0.50, spawned / 60));
     state.nextSpriteAt = now + 20000 + Math.random() * 40000;
   }
   function hasHotword(lines){
@@ -966,6 +1082,21 @@
     morph();
     applyRotation();
   }
+  function tickPacing(){
+    const now = Date.now();
+    const last = state.paceTickAt || now;
+    const elapsed = Math.max(0, now - last);
+    state.paceTickAt = now;
+    state.eventHeat = Math.max(0, (state.eventHeat || 0) - (elapsed / 26000));
+  }
+  function canSpendHeat(cost){
+    tickPacing();
+    return ((state.eventHeat || 0) + Math.max(0, cost)) <= 1.2;
+  }
+  function spendHeat(cost){
+    tickPacing();
+    state.eventHeat = Math.min(2, (state.eventHeat || 0) + Math.max(0, cost));
+  }
 
   function persist(){
     try{
@@ -975,6 +1106,7 @@
         drift: state.drift, buffer: state.buffer.slice(-260),
         visits: state.visits, erasSeen: state.erasSeen.slice(-24), lastVisitKey: state.lastVisitKey,
         nextBreachIn: Math.max(0, (state.nextBreachAt || 0) - now),
+        eventHeat: state.eventHeat,
       }));
     }catch{}
   }
@@ -994,6 +1126,7 @@
       if(Array.isArray(o.erasSeen)) state.erasSeen=o.erasSeen.filter(x => typeof x === "string").slice(-24);
       if(typeof o.lastVisitKey==="string") state.lastVisitKey=o.lastVisitKey;
       if(typeof o.nextBreachIn==="number") state.nextBreachAt = Date.now() + Math.max(0, o.nextBreachIn);
+      if(typeof o.eventHeat==="number") state.eventHeat = Math.max(0, Math.min(2, o.eventHeat));
     }catch{}
   }
 
@@ -1398,6 +1531,7 @@
 
   function act(fn, { append=false, echo=true, vector="FLOW" } = {}){
     click();
+    tickPacing();
     if(typeof fn === "function") fn();
     state.vector = vector;
     if(maybeTriggerConvergence(vector)){
@@ -1475,15 +1609,19 @@
     }
     return lines;
   }
-  function appendWormhole({ hackle=false } = {}){
-    const addedLines = pickWormholeLines({ count: Math.floor(Math.random() * 8) + 6, hackle });
+  function appendWormhole({ hackle=false, replace=true } = {}){
+    const cost = hackle ? 0.36 : 0.30;
+    const throttled = !canSpendHeat(cost);
+    const count = throttled ? (Math.floor(Math.random() * 4) + 3) : (Math.floor(Math.random() * 8) + 6);
+    const addedLines = pickWormholeLines({ count, hackle });
     if(!addedLines.length) return false;
+    spendHeat(throttled ? cost * 0.5 : cost);
     if(hasHotword(addedLines)) maybeSprite("KEYWORD");
     if(state.scrollMode){
       state.buffer = state.buffer.concat(addedLines);
     } else {
-      state.buffer = addedLines.slice();
-      state.chunkStack.push({ cursorStart: state.cursor, cursorEnd: state.cursor, lines: addedLines.slice(), hackle: !!hackle });
+      state.buffer = replace ? addedLines.slice() : state.buffer.concat(addedLines);
+      state.chunkStack.push({ cursorStart: state.cursor, cursorEnd: state.cursor, lines: state.buffer.slice(), hackle: !!hackle });
     }
     state.scrollTopNext = true;
     state.drift = clamp01(state.drift + (hackle ? 0.16 : 0.08));
@@ -1620,9 +1758,12 @@
       addedLines.push({ text:t("silence"), hackled:false });
     }
 
-    if(driftMaybe()){
+    if(driftMaybe() && canSpendHeat(0.20)){
       const splice = pickWormholeLines({ count: 2 + Math.floor(Math.random()*3) });
-      if(splice.length) addedLines = addedLines.concat(splice);
+      if(splice.length){
+        addedLines = addedLines.concat(splice);
+        spendHeat(0.20);
+      }
     }
     if(hasHotword(addedLines)) maybeSprite("KEYWORD");
 
@@ -1653,8 +1794,32 @@
     state.scrollTopNext = true;
     return true;
   }
+  function normalizeModeFlags(){
+    if(state.anomalyMenu){
+      state.scrollMode = false;
+      state.roleMenu = false;
+      state.mapMenu = false;
+      state.timeMenu = false;
+      return;
+    }
+    if(state.scrollMode){
+      state.roleMenu = false;
+      state.mapMenu = false;
+      state.timeMenu = false;
+      return;
+    }
+    if(state.roleMenu){
+      state.mapMenu = false;
+      state.timeMenu = false;
+      return;
+    }
+    if(state.mapMenu){
+      state.timeMenu = false;
+    }
+  }
 
   function render(){
+    normalizeModeFlags();
     const world = getWorldById(state.worldId);
     const day = getDay(world, state.dayNo);
     const timeEras = erasForTimeMenu();
