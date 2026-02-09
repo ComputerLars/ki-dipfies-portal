@@ -55,6 +55,11 @@
     anomalyStep:0,
     anomalyCoherence:0,
     anomalyTrail:[],
+    tribunalMenu:false,
+    tribunalSnapshot:null,
+    nextTribunalAt:0,
+    tribunalBias:0,
+    tribunalBiasTurns:0,
     eventHeat:0,
     paceTickAt:0,
     vector:"BOOT",
@@ -128,6 +133,16 @@
       anomaly_resolved_stable: "(breach stabilized)",
       anomaly_resolved_fracture: "(fracture selected)",
       anomaly_resolved_spill: "(spillover retained)",
+      tribunal_header: "[SAGER TRIBUNAL]",
+      tribunal_detected: "SAGER CHANNEL REQUESTS A VERDICT.",
+      tribunal_prompt: ">> CHOOSE YOUR TESTIMONY.",
+      tribunal_question: "TRIBUNAL EVENT.",
+      tribunal_affirm: "Affirm",
+      tribunal_refuse: "Refuse",
+      tribunal_abstain: "Abstain",
+      tribunal_affirm_line: "(coherence covenant accepted)",
+      tribunal_refuse_line: "(coherence covenant refused)",
+      tribunal_abstain_line: "(judgment deferred)",
       fracture_jump_line: ({ era, day }) => `(fracture jump: ERA ${era}, DAY ${day})`,
       time_jump_line: ({ era }) => `(time jump: ${era})`,
       return_line: ({ era }) => `(returning from ${era})`,
@@ -199,6 +214,16 @@
       anomaly_resolved_stable: "(Bruch stabilisiert)",
       anomaly_resolved_fracture: "(Bruchroute gewählt)",
       anomaly_resolved_spill: "(Überlauf bleibt)",
+      tribunal_header: "[SAGER-TRIBUNAL]",
+      tribunal_detected: "SAGER-KANAL FORDERT EIN VERDIKT.",
+      tribunal_prompt: ">> ZEUGNIS WÄHLEN.",
+      tribunal_question: "TRIBUNAL-EREIGNIS.",
+      tribunal_affirm: "Bestätigen",
+      tribunal_refuse: "Verweigern",
+      tribunal_abstain: "Enthalten",
+      tribunal_affirm_line: "(Kohärenz-Pakt bestätigt)",
+      tribunal_refuse_line: "(Kohärenz-Pakt verweigert)",
+      tribunal_abstain_line: "(Urteil vertagt)",
       fracture_jump_line: ({ era, day }) => `(Bruchsprung: ÄRA ${era}, TAG ${day})`,
       time_jump_line: ({ era }) => `(Zeitsprung: ${era})`,
       return_line: ({ era }) => `(zurück aus ${era})`,
@@ -218,11 +243,13 @@
       FLOW:"FLOW", BACK:"BACK", NEXT:"NEXT", LOOP:"LOOP", ROLE:"ROLE",
       WORMHOLE:"WORMHOLE", HACKLE:"HACKLE", JUMP:"JUMP", MAP:"MAP",
       SCROLL:"SCROLL", SHIFT:"SHIFT", GATE:"GATE", BOOT:"BOOT", BREACH:"BREACH",
+      TRIB:"TRIBUNAL",
     },
     de: {
       FLOW:"FLUSS", BACK:"ZURUECK", NEXT:"VOR", LOOP:"SCHLEIFE", ROLE:"ROLLE",
       WORMHOLE:"WURMLOCH", HACKLE:"HACKLE", JUMP:"SPRUNG", MAP:"KARTE",
       SCROLL:"SCROLL", SHIFT:"WECHSEL", GATE:"GATE", BOOT:"BOOT", BREACH:"BRUCH",
+      TRIB:"TRIBUNAL",
     },
   };
   const t = (key, vars) => {
@@ -456,6 +483,8 @@
     state.roleMenu = false;
     state.anomalyMenu = false;
     state.anomalySnapshot = null;
+    clearAnomalyChain();
+    clearTribunalState();
     state.scrollTopNext = true;
     state.speakerIndex = buildSpeakerIndex();
     state.keywordIndex = buildKeywordIndex();
@@ -551,6 +580,7 @@
     state.chunkStack = [];
     state.scrollMode = false;
     state.scrollSnapshot = null;
+    clearTribunalState();
     state.scrollTopNext = true;
     markVisit(state.worldId, state.dayNo, 2);
     return true;
@@ -569,6 +599,7 @@
     state.chunkStack = [];
     state.scrollMode = false;
     state.scrollSnapshot = null;
+    clearTribunalState();
     state.scrollTopNext = true;
     state.prevWorld = null;
     state.prevDay = null;
@@ -871,8 +902,8 @@
     advanceAnomaly("ride");
   }
   function maybeTriggerConvergence(vector){
-    if(vector === "BREACH") return false;
-    if(state.anomalyMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
+    if(vector === "BREACH" || vector === "TRIB") return false;
+    if(state.anomalyMenu || state.tribunalMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
     if(state.clicks < 3) return false;
     if(eraGroups().size < 2) return false;
     const now = Date.now();
@@ -893,12 +924,143 @@
       GATE:0.08,
     };
     const base = weights[vector] ?? 0.05;
-    const p = Math.min(0.34, base + (state.drift * 0.18));
+    const bias = Number(state.tribunalBias || 0);
+    const p = Math.max(0.01, Math.min(0.34, base + (state.drift * 0.18) - (bias * 0.015)));
     if(Math.random() >= p) return false;
     const opened = openAnomalyMenu();
     if(opened){
       spendHeat(0.56);
       state.nextBreachAt = now + 45000 + Math.floor(Math.random() * 70000);
+    }
+    return opened;
+  }
+  function clearTribunalState(){
+    state.tribunalMenu = false;
+    state.tribunalSnapshot = null;
+  }
+  function openTribunalMenu(){
+    const lines = state.ghostLines || [];
+    if(!lines.length) return false;
+    const pick = normalizeWS(lines[Math.floor(Math.random() * lines.length)] || "");
+    if(!pick) return false;
+    state.tribunalSnapshot = {
+      worldId: state.worldId,
+      dayNo: state.dayNo,
+      cursor: state.cursor,
+      buffer: state.buffer.slice(),
+      chunkStack: state.chunkStack.slice(),
+      scrollMode: state.scrollMode,
+      scrollSnapshot: state.scrollSnapshot,
+    };
+    state.tribunalMenu = true;
+    state.anomalyMenu = false;
+    state.anomalySnapshot = null;
+    clearAnomalyChain();
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
+    state.timeMenu = false;
+    state.mapMenu = false;
+    state.roleMenu = false;
+    state.vector = "TRIB";
+    state.buffer = [
+      { text:t("tribunal_header"), hackled:false },
+      { text:t("tribunal_detected"), hackled:false },
+      { text:`"${pick}"`, hackled:false },
+      { text:t("tribunal_prompt"), hackled:false },
+    ];
+    state.scrollTopNext = true;
+    maybeSprite("KEYWORD");
+    return true;
+  }
+  function restoreFromTribunalSnapshot(){
+    const snap = state.tribunalSnapshot;
+    if(!snap) return false;
+    state.worldId = snap.worldId;
+    state.dayNo = snap.dayNo;
+    state.cursor = snap.cursor;
+    state.buffer = snap.buffer.slice();
+    state.chunkStack = snap.chunkStack.slice();
+    state.scrollMode = false;
+    state.scrollSnapshot = null;
+    state.timeMenu = false;
+    state.mapMenu = false;
+    state.roleMenu = false;
+    clearTribunalState();
+    state.scrollTopNext = true;
+    return true;
+  }
+  function tickTribunalBias(){
+    if(!state.tribunalBiasTurns || state.tribunalBiasTurns <= 0){
+      state.tribunalBias = 0;
+      state.tribunalBiasTurns = 0;
+      return;
+    }
+    const sign = state.tribunalBias > 0 ? 1 : (state.tribunalBias < 0 ? -1 : 0);
+    if(sign > 0) state.drift = clamp01(state.drift - (0.002 * Math.abs(state.tribunalBias)));
+    else if(sign < 0) state.drift = clamp01(state.drift + (0.002 * Math.abs(state.tribunalBias)));
+    state.tribunalBiasTurns -= 1;
+    if(state.tribunalBiasTurns <= 0){
+      state.tribunalBias = 0;
+      state.tribunalBiasTurns = 0;
+    }
+  }
+  function resolveTribunal(choice){
+    const restored = restoreFromTribunalSnapshot();
+    if(!restored){
+      clearTribunalState();
+      return;
+    }
+    if(choice === "affirm"){
+      state.tribunalBias = 2;
+      state.tribunalBiasTurns = 12;
+      state.drift = clamp01(state.drift * 0.82);
+      state.eventHeat = Math.max(0, (state.eventHeat || 0) - 0.35);
+      state.buffer.push({ text:t("tribunal_affirm_line"), hackled:false });
+    } else if(choice === "refuse"){
+      state.tribunalBias = -2;
+      state.tribunalBiasTurns = 10;
+      state.drift = clamp01(state.drift + 0.12);
+      state.buffer.push({ text:t("tribunal_refuse_line"), hackled:false });
+      if(Math.random() < 0.40) appendWormhole({ hackle:true, replace:false });
+    } else {
+      state.tribunalBias = 0;
+      state.tribunalBiasTurns = 7;
+      state.drift = clamp01(state.drift + 0.03);
+      state.buffer.push({ text:t("tribunal_abstain_line"), hackled:false });
+    }
+    markVisit(state.worldId, state.dayNo, 1);
+  }
+  function maybeTriggerTribunal(vector){
+    if(vector === "BREACH" || vector === "TRIB") return false;
+    if(state.anomalyMenu || state.tribunalMenu || state.timeMenu || state.mapMenu || state.roleMenu || state.scrollMode) return false;
+    if(state.clicks < 5) return false;
+    const lines = state.ghostLines || [];
+    if(!lines.length) return false;
+    const now = Date.now();
+    if(now < state.nextTribunalAt) return false;
+    if(!canSpendHeat(0.46)) return false;
+    const weights = {
+      FLOW:0.04,
+      HACKLE:0.10,
+      WORMHOLE:0.08,
+      SHIFT:0.03,
+      NEXT:0.03,
+      BACK:0.03,
+      ROLE:0.02,
+      MAP:0.02,
+      JUMP:0.03,
+      SCROLL:0.01,
+      LOOP:0.02,
+      GATE:0.05,
+    };
+    const base = weights[vector] ?? 0.03;
+    const driftBonus = Math.max(0, state.drift - 0.18) * 0.22;
+    const p = Math.min(0.24, base + driftBonus);
+    if(Math.random() >= p) return false;
+    const opened = openTribunalMenu();
+    if(opened){
+      spendHeat(0.46);
+      state.nextTribunalAt = now + 90000 + Math.floor(Math.random() * 140000);
     }
     return opened;
   }
@@ -1106,6 +1268,9 @@
         drift: state.drift, buffer: state.buffer.slice(-260),
         visits: state.visits, erasSeen: state.erasSeen.slice(-24), lastVisitKey: state.lastVisitKey,
         nextBreachIn: Math.max(0, (state.nextBreachAt || 0) - now),
+        nextTribunalIn: Math.max(0, (state.nextTribunalAt || 0) - now),
+        tribunalBias: state.tribunalBias,
+        tribunalBiasTurns: state.tribunalBiasTurns,
         eventHeat: state.eventHeat,
       }));
     }catch{}
@@ -1126,6 +1291,9 @@
       if(Array.isArray(o.erasSeen)) state.erasSeen=o.erasSeen.filter(x => typeof x === "string").slice(-24);
       if(typeof o.lastVisitKey==="string") state.lastVisitKey=o.lastVisitKey;
       if(typeof o.nextBreachIn==="number") state.nextBreachAt = Date.now() + Math.max(0, o.nextBreachIn);
+      if(typeof o.nextTribunalIn==="number") state.nextTribunalAt = Date.now() + Math.max(0, o.nextTribunalIn);
+      if(typeof o.tribunalBias==="number") state.tribunalBias = Math.max(-3, Math.min(3, o.tribunalBias));
+      if(typeof o.tribunalBiasTurns==="number") state.tribunalBiasTurns = Math.max(0, Math.min(24, o.tribunalBiasTurns));
       if(typeof o.eventHeat==="number") state.eventHeat = Math.max(0, Math.min(2, o.eventHeat));
     }catch{}
   }
@@ -1231,6 +1399,7 @@
     if(!world || !day) return;
     state.timeMenu = false;
     state.mapMenu = false;
+    clearTribunalState();
     if(!state.scrollMode){
       state.scrollSnapshot = {
         cursor: state.cursor,
@@ -1311,6 +1480,7 @@
     state.cursor = Math.max(0, hit.idx + 1);
     state.scrollMode = false;
     state.scrollSnapshot = null;
+    clearTribunalState();
     state.buffer = [
       { text:t("gate_opens", { word }), hackled:false },
       { text: hit.line, hackled:false },
@@ -1334,6 +1504,7 @@
   function openRoleMenu(){
     state.timeMenu = false;
     state.mapMenu = false;
+    clearTribunalState();
     state.roleOptions = randomSpeakers(6);
     state.roleMenu = true;
   }
@@ -1410,6 +1581,7 @@
   function enterMapMenu(){
     state.timeMenu = false;
     state.roleMenu = false;
+    clearTribunalState();
     if(!state.mapMenu){
       state.mapSnapshot = {
         cursor: state.cursor,
@@ -1447,6 +1619,7 @@
     state.cursor = Math.max(0, hit.idx + 1);
     state.scrollMode = false;
     state.scrollSnapshot = null;
+    clearTribunalState();
     state.buffer = [
       { text:t("corridor_opens", { name }), hackled:false },
       { text: hit.line, hackled:false },
@@ -1473,6 +1646,7 @@
     state.mapSnapshot = null;
     state.timeMenu = false;
     state.roleMenu = false;
+    clearTribunalState();
     state.scrollTopNext = true;
     localStorage.setItem("ki_world", state.worldId || "");
     markVisit(state.worldId, state.dayNo, 2);
@@ -1532,9 +1706,16 @@
   function act(fn, { append=false, echo=true, vector="FLOW" } = {}){
     click();
     tickPacing();
+    tickTribunalBias();
     if(typeof fn === "function") fn();
     state.vector = vector;
     if(maybeTriggerConvergence(vector)){
+      ghostMaybe();
+      render();
+      persist();
+      return;
+    }
+    if(maybeTriggerTribunal(vector)){
       ghostMaybe();
       render();
       persist();
@@ -1650,6 +1831,7 @@
     state.cursor = 0;
     state.buffer = [{ text:t("entering_day", { day: state.dayNo }), hackled:false }];
     state.chunkStack = [];
+    clearTribunalState();
     state.scrollTopNext = true;
     if(state.scrollMode) enterScrollMode();
     if(delta > 0) state.drift = clamp01(state.drift * 0.92);
@@ -1681,6 +1863,7 @@
     state.mapSnapshot = null;
     state.timeMenu = false;
     state.roleMenu = false;
+    clearTribunalState();
     state.scrollTopNext = true;
     localStorage.setItem("ki_world", state.worldId || "");
     markVisit(state.worldId, state.dayNo, 1);
@@ -1796,6 +1979,14 @@
   }
   function normalizeModeFlags(){
     if(state.anomalyMenu){
+      state.tribunalMenu = false;
+      state.scrollMode = false;
+      state.roleMenu = false;
+      state.mapMenu = false;
+      state.timeMenu = false;
+      return;
+    }
+    if(state.tribunalMenu){
       state.scrollMode = false;
       state.roleMenu = false;
       state.mapMenu = false;
@@ -1803,19 +1994,24 @@
       return;
     }
     if(state.scrollMode){
+      state.tribunalMenu = false;
       state.roleMenu = false;
       state.mapMenu = false;
       state.timeMenu = false;
       return;
     }
     if(state.roleMenu){
+      state.tribunalMenu = false;
       state.mapMenu = false;
       state.timeMenu = false;
       return;
     }
     if(state.mapMenu){
+      state.tribunalMenu = false;
       state.timeMenu = false;
+      return;
     }
+    state.tribunalMenu = false;
   }
 
   function render(){
@@ -1838,6 +2034,15 @@
         { label:t("stabilize"), onClick: () => act(() => stabilizeTimeline(), { echo:false, vector:"BREACH" }) },
         { label:t("follow_fracture"), onClick: () => act(() => followFracture(), { echo:false, vector:"BREACH" }) },
         { label:t("ride_breach"), onClick: () => act(() => rideBreach(), { echo:false, vector:"BREACH" }) },
+      ]);
+      return;
+    }
+    if(state.tribunalMenu){
+      setQuestion(t("tribunal_question"));
+      setChoices([
+        { label:t("tribunal_affirm"), onClick: () => act(() => resolveTribunal("affirm"), { echo:false, vector:"TRIB" }) },
+        { label:t("tribunal_refuse"), onClick: () => act(() => resolveTribunal("refuse"), { echo:false, vector:"TRIB" }) },
+        { label:t("tribunal_abstain"), onClick: () => act(() => resolveTribunal("abstain"), { echo:false, vector:"TRIB" }) },
       ]);
       return;
     }

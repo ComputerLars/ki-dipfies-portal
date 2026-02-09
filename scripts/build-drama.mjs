@@ -18,11 +18,19 @@ const FUTURE_SOURCES = [
   { id: "future-2050", name: "FUTURE 2050", file: "source/futures/Gipfeltreffen 2050.docx", era: "2050" },
   { id: "future-2050-mv", name: "FUTURE 2050 // MULTIVERSE", file: "source/futures/Gipfeltreffen 2050 - Multiverse.docx", era: "2050" },
 ];
+const PAST_SOURCES = [
+  { id: "past-1955", name: "PAST 1955", file: "source/pasts/KI-DIPFIES Gipfeltreffen 1955.docx", era: "1955" },
+  { id: "past-1970", name: "PAST 1970", file: "source/pasts/KI-DIPFEL Gipfeltreffen – Memphis, 2–6 March 1970 (Summit Transcript).docx", era: "1970" },
+];
 const FUTURE_SOURCES_DE = [
   { id: "future-2027", name: "ZUKUNFT 2027", file: "source/de/futures/Gipfeltreffen 2027.de.docx", era: "2027" },
   { id: "future-2027-mv", name: "ZUKUNFT 2027 // MULTIVERSUM", file: "source/de/futures/Gipfeltreffen 2027 - Multiverse.de.docx", era: "2027" },
   { id: "future-2050", name: "ZUKUNFT 2050", file: "source/de/futures/Gipfeltreffen 2050.de.docx", era: "2050" },
   { id: "future-2050-mv", name: "ZUKUNFT 2050 // MULTIVERSUM", file: "source/de/futures/Gipfeltreffen 2050 - Multiverse.de.docx", era: "2050" },
+];
+const PAST_SOURCES_DE = [
+  { id: "past-1955", name: "VERGANGENHEIT 1955", file: "source/de/pasts/KI-DIPFIES Gipfeltreffen 1955.de.docx", era: "1955" },
+  { id: "past-1970", name: "VERGANGENHEIT 1970", file: "source/de/pasts/KI-DIPFEL Gipfeltreffen – Memphis, 2–6 March 1970 (Summit Transcript).de.docx", era: "1970" },
 ];
 const THEORY_SOURCES = [
   { id: "theory-tragedy", name: "THEORY TRAGEDY", file: "source/theory/Theory Tragedy - Readers Version.docx", era: "2025", mode: "act" },
@@ -183,6 +191,55 @@ function splitActs(blocks){
     .map(([day, blocks]) => ({ day, blocks }));
 }
 
+const STYLE_TAG_RE = /<(strong|b|em|i|u)\b/i;
+const leadingEnvelope = (html) => {
+  let rest = (html || "").trim();
+  const tags = [];
+  for(let i=0;i<4;i++){
+    const open = rest.match(/^<(strong|b|em|i|u)\b[^>]*>/i);
+    if(!open) break;
+    const tag = open[1].toLowerCase();
+    const closeRe = new RegExp(`</${tag}>\\s*$`, "i");
+    if(!closeRe.test(rest)) break;
+    rest = rest.replace(new RegExp(`^<${tag}\\b[^>]*>`, "i"), "").replace(closeRe, "").trim();
+    tags.push(tag);
+  }
+  return tags;
+};
+const wrapWithEnvelope = (html, envelope) => {
+  let out = (html || "").trim();
+  for(let i = envelope.length - 1; i >= 0; i--){
+    const tag = envelope[i];
+    out = `<${tag}>${out}</${tag}>`;
+  }
+  return out;
+};
+function harmonizeStyles(referenceWorlds, targetWorlds){
+  const refMap = new Map(referenceWorlds.map(w => [w.id, w]));
+  for(const tw of targetWorlds){
+    const rw = refMap.get(tw.id);
+    if(!rw) continue;
+    const targetDays = tw.days || [];
+    const refDays = rw.days || [];
+    for(let di = 0; di < targetDays.length && di < refDays.length; di++){
+      const tDay = targetDays[di];
+      const rDay = refDays[di];
+      if(!tDay || !rDay || tDay.day !== rDay.day) continue;
+      const tBlocks = tDay.blocks || [];
+      const rBlocks = rDay.blocks || [];
+      for(let bi = 0; bi < tBlocks.length && bi < rBlocks.length; bi++){
+        const tb = tBlocks[bi];
+        const rb = rBlocks[bi];
+        if(!tb || !rb) continue;
+        if(STYLE_TAG_RE.test(tb)) continue;
+        const envelope = leadingEnvelope(rb);
+        if(!envelope.length) continue;
+        tBlocks[bi] = wrapWithEnvelope(tb, envelope);
+      }
+    }
+  }
+}
+
 async function buildWorlds(sources){
   const worlds = [];
   for(const src of sources){
@@ -207,8 +264,9 @@ async function main(){
     const manifest = { files: files.map(f => `assets/dipfies/${f}`) };
     fs.writeFileSync("data/dipfies.json", JSON.stringify(manifest, null, 2));
   };
-  const worlds = await buildWorlds([...DOCX_SOURCES, ...FUTURE_SOURCES, ...THEORY_SOURCES]);
-  const worldsDe = await buildWorlds([...DOCX_SOURCES_DE, ...FUTURE_SOURCES_DE, ...THEORY_SOURCES_DE]);
+  const worlds = await buildWorlds([...DOCX_SOURCES, ...PAST_SOURCES, ...FUTURE_SOURCES, ...THEORY_SOURCES]);
+  const worldsDe = await buildWorlds([...DOCX_SOURCES_DE, ...PAST_SOURCES_DE, ...FUTURE_SOURCES_DE, ...THEORY_SOURCES_DE]);
+  harmonizeStyles(worlds, worldsDe);
   for(const sager of SAGER_SOURCES){
     const filePath = path.resolve(sager.file);
     if(!fs.existsSync(filePath)){
