@@ -44,6 +44,7 @@
     timeMenu:false,
     mapMenu:false,
     mapSnapshot:null,
+    mapVisits:0,
     keywordIndex:null,
     visits:{},
     erasSeen:[],
@@ -86,6 +87,7 @@
   const PRESENT_ERA = "2026";
   const ORIGIN_WORLD_IDS = ["origin-aleph"];
   const ORIGIN_ERA = "א";
+  const AUTO_ORIGIN_REVEAL = false;
   const I18N = {
     en: {
       lang_label: "LANG",
@@ -112,6 +114,8 @@
       more_names: "MORE NAMES",
       exit: "Exit",
       map_question: "WORLD MAP: CLICK NODE OR EXIT.",
+      origin_key_locked_line: "ORIGIN KEYSPACE: SEALED (MAP ACCESS ONLY).",
+      origin_key_open_line: "ORIGIN KEYSPACE: OPEN.",
       time_jump_question: "TIME JUMP: SELECT YEAR.",
       return_2026: "Return 2026",
       reload: "Reload",
@@ -213,6 +217,8 @@
       more_names: "MEHR NAMEN",
       exit: "Exit",
       map_question: "WELTENKARTE: KNOTEN KLICKEN ODER EXIT.",
+      origin_key_locked_line: "ORIGIN-SCHLUESSELRAUM: VERSIEGELT (NUR UEBER KARTE).",
+      origin_key_open_line: "ORIGIN-SCHLUESSELRAUM: OFFEN.",
       time_jump_question: "ZEITSPRUNG: JAHR WÄHLEN.",
       return_2026: "Zurück 2026",
       reload: "Neu laden",
@@ -584,6 +590,17 @@
   function eraGroups(){
     const map = new Map();
     for(const w of playableWorlds()){
+      const era = worldEra(w);
+      if(!era) continue;
+      if(!map.has(era)) map.set(era, []);
+      map.get(era).push(w);
+    }
+    return map;
+  }
+  function mapEraGroups(){
+    const map = new Map();
+    const worlds = (state.worlds?.worlds || []).filter(w => (w.days || []).length);
+    for(const w of worlds){
       const era = worldEra(w);
       if(!era) continue;
       if(!map.has(era)) map.set(era, []);
@@ -1432,6 +1449,7 @@
     markVisit(state.worldId, state.dayNo, 1);
   }
   function maybeTriggerOrigin(vector){
+    if(!AUTO_ORIGIN_REVEAL) return false;
     if(vector === "BREACH" || vector === "TRIB" || vector === "REPLAY" || vector === "ORIGIN") return false;
     if(state.originUnlocked) return false;
     if(!hasOriginWorld()) return false;
@@ -1659,6 +1677,7 @@
         nextCounterIn: Math.max(0, (state.nextCounterAt || 0) - now),
         nextOriginIn: Math.max(0, (state.nextOriginAt || 0) - now),
         actionCount: state.actionCount,
+        mapVisits: state.mapVisits,
         originUnlocked: !!state.originUnlocked,
         originSpectacleSeen: !!state.originSpectacleSeen,
         originFirstJumpDone: !!state.originFirstJumpDone,
@@ -1688,6 +1707,7 @@
       if(typeof o.nextCounterIn==="number") state.nextCounterAt = Date.now() + Math.max(0, o.nextCounterIn);
       if(typeof o.nextOriginIn==="number") state.nextOriginAt = Date.now() + Math.max(0, o.nextOriginIn);
       if(typeof o.actionCount==="number") state.actionCount = Math.max(0, Math.min(9999, o.actionCount));
+      if(typeof o.mapVisits==="number") state.mapVisits = Math.max(0, Math.min(999, o.mapVisits));
       if(typeof o.originUnlocked==="boolean") state.originUnlocked = o.originUnlocked;
       if(typeof o.originSpectacleSeen==="boolean") state.originSpectacleSeen = o.originSpectacleSeen;
       if(typeof o.originFirstJumpDone==="boolean") state.originFirstJumpDone = o.originFirstJumpDone;
@@ -1910,8 +1930,7 @@
     state.roleOptions = randomSpeakers(6);
     state.roleMenu = true;
   }
-  function sortedEraWorlds(era){
-    const groups = eraGroups();
+  function sortedEraWorlds(era, groups = eraGroups()){
     const list = (groups.get(era) || []).slice();
     if(!list.length) return list;
     if(era === PRESENT_ERA){
@@ -1931,11 +1950,10 @@
     });
     return list;
   }
-  function buildEraLabelMap(){
+  function buildEraLabelMap(groups = eraGroups()){
     const map = new Map();
-    const groups = eraGroups();
     for(const [era, worlds] of groups.entries()){
-      const ordered = sortedEraWorlds(era);
+      const ordered = sortedEraWorlds(era, groups);
       ordered.forEach((w, i) => map.set(w.id, `V.${i+1}`));
     }
     return map;
@@ -1948,15 +1966,25 @@
     return (w.name || w.id || t("unknown")).toUpperCase();
   }
   function buildMapBuffer(){
-    const groups = eraGroups();
+    const groups = mapEraGroups();
     const eras = Array.from(groups.keys()).sort((a,b) => {
       const da = eraSortKey(a);
       const db = eraSortKey(b);
       if(da !== db) return da - db;
       return a.localeCompare(b);
     });
-    const labelMap = buildEraLabelMap();
-    const node = (w) => `<span class="map-node" data-world="${escapeHTML(w.id)}">${worldLabel(w, labelMap)}</span>`;
+    const labelMap = buildEraLabelMap(groups);
+    const node = (w) => {
+      const isOrigin = isOriginWorldId(w.id);
+      const locked = isOrigin && !state.originUnlocked;
+      const cls = ["map-node"];
+      if(isOrigin) cls.push("map-origin");
+      if(locked) cls.push("map-locked");
+      const attrs = [`class="${cls.join(" ")}"`, `data-world="${escapeHTML(w.id)}"`];
+      if(locked) attrs.push(`data-origin-locked="1"`);
+      const label = isOrigin ? (locked ? "א.LOCK" : "א.KEY") : worldLabel(w, labelMap);
+      return `<span ${attrs.join(" ")}>${label}</span>`;
+    };
     const lines = [
       { text:`<span class="map-line">[${t("world_map")}]</span>`, hackled:false },
       { text:`<span class="map-line">${t("click_node_exit")}</span>`, hackled:false },
@@ -1967,15 +1995,21 @@
       return lines;
     }
     const makeRow = (worlds) => worlds.map(w => node(w)).join("&nbsp;--&nbsp;");
-    const rootEra = eras.includes(ORIGIN_ERA) ? ORIGIN_ERA : (eras.includes(PRESENT_ERA) ? PRESENT_ERA : eras[0]);
-    const futureEras = eras.filter(e => e !== rootEra);
-    const rootWorlds = sortedEraWorlds(rootEra);
+    if(eras.includes(ORIGIN_ERA)){
+      const originWorlds = sortedEraWorlds(ORIGIN_ERA, groups);
+      lines.push({ text:`<span class="map-line map-keyline">${state.originUnlocked ? t("origin_key_open_line") : t("origin_key_locked_line")}</span>`, hackled:false });
+      lines.push({ text:`<span class="map-line">&nbsp;&nbsp;${makeRow(originWorlds)}</span>`, hackled:false });
+      lines.push({ text:`<span class="map-line">&nbsp;&nbsp;|</span>`, hackled:false });
+    }
+    const rootEra = eras.includes(PRESENT_ERA) ? PRESENT_ERA : (eras.find(e => e !== ORIGIN_ERA) || ORIGIN_ERA);
+    const futureEras = eras.filter(e => e !== rootEra && e !== ORIGIN_ERA);
+    const rootWorlds = sortedEraWorlds(rootEra, groups);
     lines.push({ text:`<span class="map-line">ERA ${rootEra}</span>`, hackled:false });
     lines.push({ text:`<span class="map-line">&nbsp;&nbsp;${makeRow(rootWorlds)}</span>`, hackled:false });
     if(futureEras.length){
       lines.push({ text:`<span class="map-line">&nbsp;&nbsp;|</span>`, hackled:false });
       futureEras.forEach((era, idx) => {
-        const worlds = sortedEraWorlds(era);
+        const worlds = sortedEraWorlds(era, groups);
         lines.push({ text:`<span class="map-line">&nbsp;&nbsp;+-- ERA ${era}</span>`, hackled:false });
         const branch = idx < futureEras.length - 1 ? "&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;" : "&nbsp;&nbsp;&nbsp;&nbsp;";
         lines.push({ text:`<span class="map-line">${branch}${makeRow(worlds)}</span>`, hackled:false });
@@ -2000,6 +2034,7 @@
         scrollSnapshot: state.scrollSnapshot,
       };
     }
+    state.mapVisits = Math.min(999, (state.mapVisits || 0) + 1);
     state.mapMenu = true;
     state.scrollMode = false;
     state.scrollSnapshot = null;
@@ -2042,6 +2077,10 @@
     markVisit(state.worldId, state.dayNo, 2);
   }
   function jumpToWorld(worldId){
+    if(isOriginWorldId(worldId) && !state.originUnlocked){
+      openOriginMenu();
+      return;
+    }
     const w = getWorldById(worldId);
     if(!w) return;
     state.worldId = w.id;
@@ -2659,6 +2698,12 @@
           if(!id) return;
           click();
           state.vector = "MAP";
+          if(isOriginWorldId(id) && node.getAttribute("data-origin-locked") === "1"){
+            openOriginMenu();
+            render();
+            persist();
+            return;
+          }
           jumpToWorld(id);
           render();
           persist();

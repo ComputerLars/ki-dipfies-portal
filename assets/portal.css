@@ -57,6 +57,9 @@ strong{font-weight:700}
 u{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px}
 #buffer .kw{border-bottom:1px dashed var(--fg);cursor:pointer}
 #buffer .map-node{border-bottom:1px solid var(--fg);cursor:pointer}
+#buffer .map-node.map-origin{font-weight:700;letter-spacing:.08em}
+#buffer .map-node.map-locked{border-bottom-style:dashed;opacity:.82}
+#buffer .map-line.map-keyline{opacity:.9;letter-spacing:.08em}
 #buffer .spk{cursor:pointer}
 .line.typed{opacity:0;animation:typeIn 180ms ease forwards}
 @keyframes typeIn{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:translateY(0)}}
