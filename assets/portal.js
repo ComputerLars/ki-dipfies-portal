@@ -92,6 +92,7 @@
     en: {
       lang_label: "LANG",
       day: "DAY",
+      year: "YEAR",
       time: "TIME",
       drift: "DRIFT",
       vector: "VECTOR",
@@ -195,6 +196,7 @@
     de: {
       lang_label: "SPRACHE",
       day: "TAG",
+      year: "JAHR",
       time: "ZEIT",
       drift: "DRIFT",
       vector: "VEKTOR",
@@ -1748,12 +1750,14 @@
     return "";
   }
   function setHUD(world, day){
+    const era = worldEra(world) || PRESENT_ERA;
+    const y = `${t("year")} ${era}`;
     const d = day ? `${t("day")} ${day.day}` : (state.dayNo ? `${t("day")} ${state.dayNo}` : `${t("day")} ?`);
     const tm = inferTime(world, day);
     const time = tm ? `${I18N[state.lang]?.time || "TIME"} ${tm}` : `${I18N[state.lang]?.time || "TIME"} --`;
     const drift = `${I18N[state.lang]?.drift || "DRIFT"} ${Math.round(state.drift*100)}%`;
     const vec = `${I18N[state.lang]?.vector || "VECTOR"} ${vLabel(state.vector)}`;
-    $("#state").textContent = `${d} // ${time} // ${drift} // ${vec}`;
+    $("#state").textContent = `${y} // ${d} // ${time} // ${drift} // ${vec}`;
   }
 
   function renderBuffer(){
